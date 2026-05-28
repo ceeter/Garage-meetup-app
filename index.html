@@ -262,7 +262,7 @@
       transition: background 0.15s, box-shadow 0.15s;
     }
     .btn-primary:hover { background: var(--accent-hi); box-shadow: 0 0 22px var(--accent-glow); }
-    .btn-primary:disabled, .btn-cancel:disabled, .btn-del:disabled, .btn-ghost:disabled {
+    .btn-primary:disabled, .btn-cancel:disabled, .btn-del:disabled, .btn-ghost:disabled, .btn-add:disabled {
       opacity: 0.58; cursor: not-allowed; box-shadow: none;
     }
     .btn-cancel {
@@ -283,6 +283,70 @@
     .form-status.success { color: var(--green); }
     .form-status.error { color: var(--red); }
     .form-status.loading { color: var(--amber); }
+
+    /* ============================================================
+       AUTH PANEL
+       ============================================================ */
+    .auth-panel {
+      padding: 14px 16px 0;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+    .auth-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 14px;
+    }
+    .auth-top {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      margin-bottom: 12px;
+    }
+    .auth-title {
+      font-family: var(--f-display);
+      font-size: 1rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .auth-sub { font-size: 0.78rem; color: var(--text-2); margin-top: 2px; }
+    .auth-user {
+      color: var(--accent);
+      font-size: 0.78rem; font-weight: 600;
+      text-align: right; word-break: break-word;
+      max-width: 45%;
+    }
+    .auth-fields { display: grid; gap: 10px; }
+    .auth-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .auth-note {
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: var(--text-3);
+      line-height: 1.45;
+    }
+    .auth-status {
+      display: none; margin-top: 10px; font-size: 0.82rem;
+      color: var(--text-2); line-height: 1.45;
+    }
+    .auth-status.show { display: block; }
+    .auth-status.success { color: var(--green); }
+    .auth-status.error { color: var(--red); }
+    .auth-status.loading { color: var(--amber); }
+    .auth-required-note {
+      display: none;
+      margin-bottom: 12px;
+      background: rgba(245,158,11,0.08);
+      border: 1px solid rgba(245,158,11,0.22);
+      color: var(--amber);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .auth-required-note.show { display: block; }
+    @media (min-width: 600px) {
+      .auth-panel { padding: 18px 22px 0; }
+      .auth-fields { grid-template-columns: 1fr 1fr; }
+      .auth-actions { display: flex; }
+    }
 
     /* ============================================================
        SHARED: EMPTY STATES
@@ -773,6 +837,35 @@
        ============================================================ -->
   <main class="main">
 
+    <div class="auth-panel" aria-label="Account sign in">
+      <div class="auth-card">
+        <div class="auth-top">
+          <div>
+            <div class="auth-title">Account Access</div>
+            <div class="auth-sub">Sign in to create or edit your garage profile.</div>
+          </div>
+          <div class="auth-user" id="auth-user-email">Signed out</div>
+        </div>
+        <div class="auth-fields">
+          <div class="form-grp">
+            <label class="form-lbl" for="auth-email">Email</label>
+            <input type="email" class="form-inp" id="auth-email" autocomplete="email" placeholder="you@example.com">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl" for="auth-password">Password</label>
+            <input type="password" class="form-inp" id="auth-password" autocomplete="current-password" placeholder="••••••••">
+          </div>
+        </div>
+        <div class="auth-actions">
+          <button class="btn-primary" id="auth-signup-btn">Sign Up</button>
+          <button class="btn-cancel" id="auth-signin-btn">Sign In</button>
+          <button class="btn-cancel" id="auth-signout-btn">Sign Out</button>
+        </div>
+        <div class="auth-status" id="auth-status" role="status" aria-live="polite"></div>
+        <div class="auth-note">Public garage and event details stay readable when signed out.</div>
+      </div>
+    </div>
+
     <!-- ======================================================
          HOME TAB
          ====================================================== -->
@@ -828,6 +921,8 @@
         <div class="sec-title">The <em>Garage</em></div>
         <button class="btn-add" id="toggle-add-member" title="Add Member" aria-label="Add Member">+</button>
       </div>
+
+      <div class="auth-required-note" id="garage-auth-note">Sign in above to create or edit your own garage profile. Public profiles remain visible.</div>
 
       <!-- Add/Edit Member inline form -->
       <div class="inline-form" id="add-member-form">
@@ -1399,6 +1494,154 @@
     return appData.currentUser && appData.currentUser.id;
   }
 
+  function currentUserEmail() {
+    return appData.currentUser && appData.currentUser.email;
+  }
+
+  function setAuthStatus(type, msg) {
+    const el = document.getElementById('auth-status');
+    el.textContent = msg;
+    el.className = `auth-status${msg ? ' show' : ''}${type ? ' ' + type : ''}`;
+  }
+
+  function setAuthLoading(isLoading) {
+    ['auth-signup-btn','auth-signin-btn','auth-signout-btn','auth-email','auth-password'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = isLoading;
+    });
+  }
+
+  function updateAuthUI() {
+    const signedIn = !!currentUserId();
+    const emailEl = document.getElementById('auth-user-email');
+    const signOutBtn = document.getElementById('auth-signout-btn');
+    const addMemberBtn = document.getElementById('toggle-add-member');
+    const garageNote = document.getElementById('garage-auth-note');
+
+    emailEl.textContent = signedIn ? currentUserEmail() : 'Signed out';
+    signOutBtn.disabled = !signedIn;
+    addMemberBtn.disabled = !signedIn;
+    addMemberBtn.title = signedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
+    addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
+    garageNote.classList.toggle('show', !signedIn);
+
+    if (!signedIn) {
+      document.getElementById('add-member-form').classList.remove('open');
+      resetMemberForm();
+    }
+  }
+
+  function activeTabName() {
+    const active = document.querySelector('.nav-item.active');
+    return active ? active.dataset.tab : 'home';
+  }
+
+  function renderActiveTab() {
+    const renders = {
+      home: renderHome,
+      garage: renderMembers,
+      meets: renderMeets,
+      map: renderCheckins,
+      photos: renderPhotos,
+      announce: renderAnnouncements
+    };
+    const render = renders[activeTabName()];
+    if (render) render();
+  }
+
+  async function refreshAfterAuthChange(message) {
+    setAuthStatus('loading', 'Refreshing account and garage data...');
+    await loadCurrentUser();
+    await loadAllData(false);
+    updateAuthUI();
+    renderHome();
+    renderActiveTab();
+    setAuthStatus('success', message);
+  }
+
+  function authCredentials() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!email || !password) throw new Error('Email and password are required.');
+    return { email, password };
+  }
+
+  async function signUp() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      setAuthStatus('error', 'Supabase Auth is not configured.');
+      return;
+    }
+    try {
+      setAuthLoading(true);
+      setAuthStatus('loading', 'Creating your account...');
+      const { email, password } = authCredentials();
+      const { error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) throw error;
+      await refreshAfterAuthChange('Account created. Check your email if confirmation is required, then sign in.');
+    } catch (err) {
+      setAuthStatus('error', err.message);
+    } finally {
+      setAuthLoading(false);
+      updateAuthUI();
+    }
+  }
+
+  async function signIn() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      setAuthStatus('error', 'Supabase Auth is not configured.');
+      return;
+    }
+    try {
+      setAuthLoading(true);
+      setAuthStatus('loading', 'Signing you in...');
+      const { email, password } = authCredentials();
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await refreshAfterAuthChange('Signed in successfully.');
+      document.getElementById('auth-password').value = '';
+    } catch (err) {
+      setAuthStatus('error', err.message);
+    } finally {
+      setAuthLoading(false);
+      updateAuthUI();
+    }
+  }
+
+  async function signOut() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      setAuthStatus('error', 'Supabase Auth is not configured.');
+      return;
+    }
+    try {
+      setAuthLoading(true);
+      setAuthStatus('loading', 'Signing you out...');
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) throw error;
+      await refreshAfterAuthChange('Signed out successfully. Public garage list is still visible.');
+    } catch (err) {
+      setAuthStatus('error', err.message);
+    } finally {
+      setAuthLoading(false);
+      updateAuthUI();
+    }
+  }
+
+  function wireAuth() {
+    document.getElementById('auth-signup-btn').addEventListener('click', signUp);
+    document.getElementById('auth-signin-btn').addEventListener('click', signIn);
+    document.getElementById('auth-signout-btn').addEventListener('click', signOut);
+    if (isSupabaseReady() && supabaseClient.auth) {
+      supabaseClient.auth.onAuthStateChange(async (event) => {
+        const msg = event === 'SIGNED_OUT'
+          ? 'Signed out successfully. Public garage list is still visible.'
+          : 'Auth state updated. Garage controls refreshed.';
+        await refreshAfterAuthChange(msg);
+      });
+    } else {
+      setAuthStatus('error', 'Supabase Auth is not configured. Garage profile changes are disabled.');
+    }
+  }
+
   function myMemberProfile() {
     const uid = currentUserId();
     if (!uid) return null;
@@ -1428,10 +1671,11 @@
     return appData[kind];
   }
 
-  async function loadAllData() {
+  async function loadAllData(showToast = true) {
     if (!isSupabaseReady()) seedIfNeeded();
     await Promise.all(['members','meets','photos','announcements'].map(k => loadKind(k, true)));
     appData.checkins = lsGet(LS.checkins);
+    if (!showToast) return;
     if (isSupabaseReady()) toast('Shared Supabase data loaded');
     else toast('Add Supabase config to enable shared data');
   }
@@ -1646,9 +1890,10 @@
     document.getElementById('add-member-form').classList.add('open');
 
     if (isSupabaseReady()) await loadCurrentUser();
-    if (isSupabaseReady() && !currentUserId()) {
+    if (!currentUserId()) {
       setMemberFormSaving(false);
       setMemberFormStatus('error', 'Please sign in before creating or editing your garage profile.');
+      updateAuthUI();
       return;
     }
 
@@ -1665,8 +1910,8 @@
 
   function editMember(id) {
     const member = appData.members.find(m => m.id === id);
-    if (!member || member.user_id !== currentUserId()) {
-      toast('You can only edit your own garage profile');
+    if (!currentUserId() || !member || member.user_id !== currentUserId()) {
+      toast('Sign in to edit your own garage profile');
       return;
     }
     fillMemberForm(member);
@@ -1690,7 +1935,7 @@
       setMemberFormSaving(true);
       setMemberFormStatus('loading', editingMemberId ? 'Saving profile changes...' : 'Creating your garage profile...');
       if (isSupabaseReady()) await loadCurrentUser();
-      if (isSupabaseReady() && !currentUserId()) throw new Error('Please sign in before saving your garage profile.');
+      if (!currentUserId()) throw new Error('Please sign in before saving your garage profile.');
 
       const existing = isSupabaseReady() ? myMemberProfile() : (editingMemberId && appData.members.find(m => m.id === editingMemberId));
       const m = {
@@ -1743,9 +1988,10 @@
   }
 
   function setMemberFormSaving(isSaving) {
-    ['save-member-btn','cancel-member-btn','toggle-add-member'].forEach(id => {
+    ['save-member-btn','cancel-member-btn'].forEach(id => {
       document.getElementById(id).disabled = isSaving;
     });
+    document.getElementById('toggle-add-member').disabled = isSaving || !currentUserId();
   }
 
   function setMemberFormStatus(type, msg) {
@@ -1756,8 +2002,8 @@
 
   async function deleteMember(id) {
     const member = appData.members.find(m => m.id === id);
-    if (isSupabaseReady() && (!member || member.user_id !== currentUserId())) {
-      toast('You can only remove your own garage profile');
+    if (!currentUserId() || !member || member.user_id !== currentUserId()) {
+      toast('Sign in to remove your own garage profile');
       return;
     }
     if (!confirm('Remove this member from the garage?')) return;
@@ -2228,8 +2474,13 @@
   // 11. INIT
   // ==============================================================
   (async function init() {
+    wireAuth();
+    setAuthStatus('loading', 'Checking signed-in user...');
     await loadCurrentUser();
+    updateAuthUI();
+    setAuthStatus(currentUserId() ? 'success' : '', currentUserId() ? 'Signed in.' : 'Sign in to manage your garage profile.');
     await loadAllData();
+    updateAuthUI();
     renderHome();
   })();
 
