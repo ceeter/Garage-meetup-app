@@ -1408,7 +1408,7 @@
     members: {
       table: 'members', order: 'created_at',
       toDb: m => ({
-        id: m.id, user_id: m.user_id || null, name: m.name,
+        id: m.id, user_id: m.user_id || currentSessionUserId() || currentUserId() || null, name: m.name,
         year: m.year || '', make: m.make, model: m.model,
         mods: m.mods || '', ig: m.ig || '', tt: m.tt || ''
       })
@@ -1531,6 +1531,10 @@
 
   function currentUserId() {
     return appData.currentUser && appData.currentUser.id;
+  }
+
+  function currentSessionUserId() {
+    return appData.currentSession && appData.currentSession.user && appData.currentSession.user.id;
   }
 
   function currentUserEmail() {
@@ -1772,13 +1776,20 @@
       return row;
     }
 
+    if (kind === 'members' && !row.user_id) {
+      row.user_id = currentSessionUserId() || currentUserId();
+    }
+
     const { data, error } = await supabaseClient
       .from(DB[kind].table)
       .insert([toDb(kind, row)])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error(`Could not add ${kind}`, error);
+      throw error;
+    }
     return normalize(kind, data);
   }
 
@@ -2017,8 +2028,12 @@
     try {
       setMemberFormSaving(true);
       setMemberFormStatus('loading', editingMemberId ? 'Saving profile changes...' : 'Creating your garage profile...');
-      if (isSupabaseReady()) await loadCurrentUser();
-      if (!currentUserId()) throw new Error('Please sign in before saving your garage profile.');
+      if (isSupabaseReady()) {
+        await loadCurrentSession();
+        await loadCurrentUser();
+      }
+      const signedInUserId = currentSessionUserId() || currentUserId();
+      if (!signedInUserId) throw new Error('Please sign in before saving your garage profile.');
 
       const existing = isSupabaseReady() ? myMemberProfile() : (editingMemberId && appData.members.find(m => m.id === editingMemberId));
       const m = {
@@ -2029,7 +2044,7 @@
         ig:    document.getElementById('m-ig').value.trim(),
         tt:    document.getElementById('m-tt').value.trim()
       };
-      if (isSupabaseReady()) m.user_id = currentUserId();
+      if (isSupabaseReady()) m.user_id = signedInUserId;
 
       if (existing) {
         await updateRecord('members', existing.id, m);
@@ -2044,8 +2059,12 @@
       setMemberFormStatus('success', 'Garage profile saved successfully.');
       toast(existing ? 'Profile updated 🚗' : 'Profile created 🚗');
     } catch (err) {
-      setMemberFormStatus('error', `Could not save profile: ${err.message}`);
-      toast(`Could not save profile: ${err.message}`);
+      console.error('Could not save member profile', err);
+      const msg = err.message && err.message.includes('row-level security')
+        ? 'Could not save profile: Supabase rejected this save. Please confirm you are signed in, then check the members RLS policy allows authenticated users to insert rows where user_id = auth.uid().'
+        : `Could not save profile: ${err.message}`;
+      setMemberFormStatus('error', msg);
+      toast(msg);
     } finally {
       setMemberFormSaving(false);
     }

@@ -56,6 +56,25 @@ alter table public.members add column if not exists user_id uuid unique referenc
 alter table public.members add column if not exists updated_at timestamptz not null default now();
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
 
+create or replace function public.set_member_user_id()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.user_id is null then
+    new.user_id = auth.uid();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists set_member_user_id on public.members;
+create trigger set_member_user_id
+  before insert on public.members
+  for each row execute function public.set_member_user_id();
+
 alter table public.members enable row level security;
 alter table public.meets enable row level security;
 alter table public.photo_drops enable row level security;
