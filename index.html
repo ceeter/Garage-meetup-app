@@ -1725,6 +1725,32 @@
     return appData.members.find(m => m.user_id === uid) || null;
   }
 
+  function upsertLocalMemberProfile(member) {
+    const idx = appData.members.findIndex(m => m.user_id && m.user_id === member.user_id);
+    if (idx > -1) appData.members[idx] = member;
+    else appData.members.unshift(member);
+    return member;
+  }
+
+  async function loadMyMemberProfile(user, showError = true) {
+    if (!user || !user.id) return null;
+    if (!isSupabaseReady()) return myMemberProfile();
+
+    const { data, error } = await supabaseClient
+      .from('members')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Could not load your garage profile', error);
+      if (showError) setMemberFormStatus('error', `Could not load your garage profile: ${error.message}`);
+      throw error;
+    }
+
+    return data ? upsertLocalMemberProfile(normalize('members', data)) : null;
+  }
+
   async function loadKind(kind, showError = true, throwOnError = false) {
     if (!isSupabaseReady()) {
       appData[kind] = lsGet(localKey(kind));
@@ -1986,13 +2012,14 @@
     if (isSupabaseReady()) await loadCurrentUser();
     if (!currentUserId()) {
       setMemberFormSaving(false);
-      setMemberFormStatus('error', 'Please sign in before creating or editing your garage profile.');
+      setMemberFormStatus('error', 'Please sign in first.');
       updateAuthUI();
       return;
     }
 
-    if (isSupabaseReady()) await loadKind('members', false);
-    const mine = myMemberProfile();
+    const mine = isSupabaseReady()
+      ? await loadMyMemberProfile(appData.currentUser, false)
+      : myMemberProfile();
     fillMemberForm(mine || {});
     editingMemberId = mine ? mine.id : null;
     document.getElementById('member-form-title').textContent = mine ? 'Edit Garage Profile' : 'Create Garage Profile';
@@ -2028,14 +2055,6 @@
     try {
       setMemberFormSaving(true);
       setMemberFormStatus('loading', editingMemberId ? 'Saving profile changes...' : 'Creating your garage profile...');
-      if (isSupabaseReady()) {
-        await loadCurrentSession();
-        await loadCurrentUser();
-      }
-      const signedInUserId = currentSessionUserId() || currentUserId();
-      if (!signedInUserId) throw new Error('Please sign in before saving your garage profile.');
-
-      const existing = isSupabaseReady() ? myMemberProfile() : (editingMemberId && appData.members.find(m => m.id === editingMemberId));
       const m = {
         name,
         year:  document.getElementById('m-year').value.trim(),
@@ -2044,25 +2063,49 @@
         ig:    document.getElementById('m-ig').value.trim(),
         tt:    document.getElementById('m-tt').value.trim()
       };
-      if (isSupabaseReady()) m.user_id = signedInUserId;
+      let existing = editingMemberId && appData.members.find(member => member.id === editingMemberId);
+      const wasExisting = !!existing;
 
-      if (existing) {
+      if (isSupabaseReady()) {
+        const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+        if (userError) throw userError;
+        const user = userData && userData.user;
+        if (!user) {
+          setMemberFormStatus('error', 'Please sign in first.');
+          toast('Please sign in first.');
+          return;
+        }
+
+        appData.currentUser = user;
+        existing = await loadMyMemberProfile(user, false);
+        const payload = { ...m, user_id: user.id };
+        const { data, error } = await supabaseClient
+          .from('members')
+          .upsert(payload, { onConflict: 'user_id' })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Supabase member upsert failed', error);
+          throw error;
+        }
+
+        upsertLocalMemberProfile(normalize('members', data));
+        await loadKind('members');
+      } else if (existing) {
         await updateRecord('members', existing.id, m);
       } else {
         await addRecord('members', { id: genId(), ...m });
       }
 
-      await loadKind('members');
       editingMemberId = myMemberProfile() ? myMemberProfile().id : null;
       renderMembers();
       renderHome();
       setMemberFormStatus('success', 'Garage profile saved successfully.');
-      toast(existing ? 'Profile updated 🚗' : 'Profile created 🚗');
+      toast((wasExisting || existing) ? 'Profile updated 🚗' : 'Profile created 🚗');
     } catch (err) {
       console.error('Could not save member profile', err);
-      const msg = err.message && err.message.includes('row-level security')
-        ? 'Could not save profile: Supabase rejected this save. Please confirm you are signed in, then check the members RLS policy allows authenticated users to insert rows where user_id = auth.uid().'
-        : `Could not save profile: ${err.message}`;
+      const msg = `Could not save profile: ${err.message || err}`;
       setMemberFormStatus('error', msg);
       toast(msg);
     } finally {
