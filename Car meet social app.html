@@ -1,0 +1,1954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- ============================================================
+       RENAME: To rebrand, search/replace "Garage Circle" globally.
+       Also update the <title> and logo-text below.
+       ============================================================ -->
+  <title>Garage Circle</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0A0A0C">
+
+  <!-- Google Fonts: Barlow Condensed (automotive/display) + DM Sans (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ============================================================
+       CSS CUSTOM PROPERTIES — edit these to retheme the whole app
+       ============================================================ */
+    :root {
+      /* Background layers */
+      --bg:            #09090B;
+      --bg-card:       #111116;
+      --bg-card-alt:   #16161D;
+      --bg-input:      rgba(255,255,255,0.04);
+
+      /* Accent — warm red/orange */
+      --accent:        #E8441A;
+      --accent-hi:     #FF5C2E;
+      --accent-lo:     rgba(232,68,26,0.12);
+      --accent-glow:   rgba(232,68,26,0.28);
+      --accent-border: rgba(232,68,26,0.32);
+
+      /* Status colours */
+      --green:   #22C55E;
+      --amber:   #F59E0B;
+      --red:     #EF4444;
+      --blue:    #3B82F6;
+
+      /* Borders / dividers */
+      --border:  rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.12);
+
+      /* Typography */
+      --text:    #E8E6E1;
+      --text-2:  #A0A0AA;
+      --text-3:  #565660;
+
+      /* Fonts */
+      --f-display: 'Barlow Condensed', sans-serif;
+      --f-body:    'DM Sans', sans-serif;
+
+      /* Layout */
+      --nav-h:     64px;
+      --safe-bot:  env(safe-area-inset-bottom, 0px);
+      --r:         12px;
+      --r-sm:       8px;
+    }
+
+    /* ============================================================
+       RESET & BASE
+       ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html  { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+    body  {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--f-body);
+      font-size: 0.9375rem;
+      line-height: 1.55;
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+    button  { cursor: pointer; border: none; background: none; font-family: var(--f-body); }
+    input, textarea, select { font-family: var(--f-body); }
+    img    { max-width: 100%; display: block; }
+
+    /* ============================================================
+       HEADER
+       ============================================================ */
+    .app-header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 18px;
+      background: rgba(9,9,11,0.94);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+      box-shadow: 0 0 18px var(--accent-glow);
+    }
+    /* RENAME: Update this text */
+    .logo-text {
+      font-family: var(--f-display);
+      font-size: 1.2rem; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .logo-text em { color: var(--accent); font-style: normal; }
+    .header-pill {
+      background: var(--accent-lo);
+      border: 1px solid var(--accent-border);
+      color: var(--accent);
+      font-family: var(--f-display);
+      font-size: 0.65rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 99px;
+    }
+
+    /* ============================================================
+       MAIN SCROLL AREA
+       ============================================================ */
+    .main {
+      padding-top: 56px;
+      padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 10px);
+      min-height: 100dvh;
+    }
+
+    /* ============================================================
+       SECTIONS / TAB PANELS
+       ============================================================ */
+    .tab-section {
+      display: none;
+      padding: 18px 16px;
+      animation: fadeUp 0.22s ease;
+    }
+    .tab-section.active { display: block; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ============================================================
+       BOTTOM NAV
+       ============================================================ */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      height: calc(var(--nav-h) + var(--safe-bot));
+      padding-bottom: var(--safe-bot);
+      background: rgba(9,9,11,0.97);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center;
+    }
+    .nav-items {
+      width: 100%;
+      display: flex; justify-content: space-around; align-items: center;
+      height: var(--nav-h);
+    }
+    .nav-item {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 4px; padding: 8px 2px;
+      color: var(--text-3);
+      font-family: var(--f-display);
+      font-size: 0.58rem; font-weight: 600;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      transition: color 0.18s;
+    }
+    .nav-item svg { width: 21px; height: 21px; transition: filter 0.18s; }
+    .nav-item.active { color: var(--accent); }
+    .nav-item.active svg { filter: drop-shadow(0 0 5px var(--accent-glow)); }
+
+    /* ============================================================
+       SHARED: SECTION HEADERS
+       ============================================================ */
+    .sec-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 15px;
+    }
+    .sec-title {
+      font-family: var(--f-display);
+      font-size: 1.45rem; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .sec-title em { color: var(--accent); font-style: normal; }
+    .btn-add {
+      width: 36px; height: 36px;
+      background: var(--accent); color: #fff; border-radius: 50%;
+      font-size: 1.3rem; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 14px var(--accent-glow);
+      transition: transform 0.15s, box-shadow 0.15s;
+      flex-shrink: 0;
+    }
+    .btn-add:hover { transform: scale(1.1); box-shadow: 0 0 22px var(--accent-glow); }
+
+    /* ============================================================
+       SHARED: CARDS
+       ============================================================ */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--border2); }
+    .card-body { padding: 16px; }
+
+    /* ============================================================
+       SHARED: FORMS
+       ============================================================ */
+    .inline-form {
+      display: none;
+      background: var(--bg-card);
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r);
+      padding: 18px;
+      margin-bottom: 18px;
+      animation: fadeUp 0.2s ease;
+    }
+    .inline-form.open { display: block; }
+    .form-title {
+      font-family: var(--f-display);
+      font-size: 1rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--accent); margin-bottom: 14px;
+    }
+    .form-grid { display: grid; gap: 11px; }
+    .form-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-grp  { display: flex; flex-direction: column; gap: 5px; }
+    .form-lbl  {
+      font-family: var(--f-display);
+      font-size: 0.66rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.09em;
+      color: var(--text-3);
+    }
+    .form-inp {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 9px 12px;
+      color: var(--text); font-size: 0.9rem;
+      outline: none; width: 100%;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+    .form-inp:focus  { border-color: var(--accent); }
+    .form-inp::placeholder { color: var(--text-3); }
+    textarea.form-inp { resize: vertical; min-height: 68px; }
+    select.form-inp  { cursor: pointer; }
+    .form-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      border-radius: var(--r-sm);
+      padding: 9px 18px;
+      font-family: var(--f-display); font-size: 0.8rem;
+      font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      box-shadow: 0 0 14px var(--accent-glow);
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .btn-primary:hover { background: var(--accent-hi); box-shadow: 0 0 22px var(--accent-glow); }
+    .btn-cancel {
+      background: transparent;
+      border: 1px solid var(--border); color: var(--text-2);
+      border-radius: var(--r-sm);
+      padding: 9px 14px;
+      font-family: var(--f-display); font-size: 0.8rem;
+      font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-cancel:hover { border-color: var(--border2); color: var(--text); }
+
+    /* ============================================================
+       SHARED: EMPTY STATES
+       ============================================================ */
+    .empty {
+      text-align: center; padding: 36px 16px; color: var(--text-3);
+    }
+    .empty-icon  { font-size: 2.4rem; margin-bottom: 10px; }
+    .empty-title {
+      font-family: var(--f-display);
+      font-size: 0.95rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-2); margin-bottom: 5px;
+    }
+    .empty-sub  { font-size: 0.82rem; }
+
+    /* ============================================================
+       TOAST
+       ============================================================ */
+    .toast {
+      position: fixed; top: 66px; left: 50%;
+      transform: translateX(-50%) translateY(-12px);
+      background: var(--bg-card-alt);
+      border: 1px solid var(--accent-border);
+      color: var(--text);
+      padding: 9px 20px;
+      border-radius: 99px; font-size: 0.82rem; font-weight: 500;
+      white-space: nowrap; z-index: 600;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ============================================================
+       HOME DASHBOARD
+       ============================================================ */
+    .hero {
+      background: linear-gradient(135deg, #180A04 0%, #0E0A0A 55%, #090B12 100%);
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r);
+      padding: 20px;
+      margin-bottom: 18px;
+      position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: -50px; right: -50px;
+      width: 200px; height: 200px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      font-family: var(--f-display);
+      font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 0.13em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 6px; position: relative;
+    }
+    .hero-h1 {
+      font-family: var(--f-display);
+      font-size: 2.5rem; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.02em; line-height: 1.05;
+      margin-bottom: 10px; position: relative;
+    }
+    .hero-meta { font-size: 0.78rem; color: var(--text-2); position: relative; }
+
+    .stats-row {
+      display: grid; grid-template-columns: repeat(3,1fr);
+      gap: 10px; margin-bottom: 18px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 14px 10px; text-align: center;
+    }
+    .stat-n {
+      font-family: var(--f-display);
+      font-size: 2rem; font-weight: 800; color: var(--accent); line-height: 1;
+    }
+    .stat-lbl {
+      font-family: var(--f-display);
+      font-size: 0.65rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--text-3); margin-top: 4px;
+    }
+
+    .activity-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 11px 0; border-bottom: 1px solid var(--border);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .act-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      flex-shrink: 0; margin-top: 5px;
+    }
+    .act-txt  { font-size: 0.84rem; color: var(--text-2); flex: 1; }
+    .act-txt strong { color: var(--text); font-weight: 600; }
+    .act-time { font-size: 0.72rem; color: var(--text-3); flex-shrink: 0; margin-top: 2px; }
+
+    /* ============================================================
+       GARAGE / MEMBER CARDS
+       ============================================================ */
+    .member-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .member-card:hover { border-color: var(--border2); }
+    .member-hdr {
+      display: flex; align-items: center; gap: 14px; padding: 16px 16px 12px;
+    }
+    .avatar {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #7C2000);
+      border: 2px solid var(--accent-border);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--f-display); font-size: 1.25rem; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .member-name {
+      font-family: var(--f-display);
+      font-size: 1.15rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .member-car { font-size: 0.8rem; color: var(--accent); font-weight: 500; margin-top: 2px; }
+    .member-bdy { padding: 0 16px 14px; }
+    .micro-lbl {
+      font-family: var(--f-display);
+      font-size: 0.62rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.09em;
+      color: var(--text-3); margin-bottom: 4px;
+    }
+    .mods-txt  { font-size: 0.83rem; color: var(--text-2); }
+    .handles   { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+    .handle-tag {
+      font-family: var(--f-display); font-size: 0.68rem; font-weight: 600;
+      padding: 3px 10px; border-radius: 99px;
+      border: 1px solid var(--border); color: var(--text-2);
+    }
+    .member-ftr {
+      display: flex; gap: 8px; padding: 10px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-2); border-radius: 6px;
+      padding: 5px 12px;
+      font-family: var(--f-display); font-size: 0.7rem;
+      font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      transition: all 0.15s;
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-del {
+      background: transparent; border: 1px solid rgba(239,68,68,0.28);
+      color: var(--red); border-radius: 6px;
+      padding: 5px 12px;
+      font-family: var(--f-display); font-size: 0.7rem;
+      font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      transition: all 0.15s;
+    }
+    .btn-del:hover { background: rgba(239,68,68,0.1); }
+
+    /* ============================================================
+       MEETS / EVENTS
+       ============================================================ */
+    .meet-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .meet-card:hover { border-color: var(--border2); }
+    .meet-topbar {
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--amber));
+    }
+    .meet-bdy  { padding: 15px 16px; }
+    .meet-date-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--accent-lo); border: 1px solid var(--accent-border);
+      border-radius: 6px; padding: 3px 9px;
+      font-family: var(--f-display); font-size: 0.72rem; font-weight: 700;
+      color: var(--accent); text-transform: uppercase; letter-spacing: 0.07em;
+      margin-bottom: 9px;
+    }
+    .meet-title {
+      font-family: var(--f-display);
+      font-size: 1.3rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px;
+    }
+    .meet-loc {
+      font-size: 0.8rem; color: var(--text-2);
+      display: flex; align-items: center; gap: 5px; margin-bottom: 10px;
+    }
+    .meet-desc {
+      font-size: 0.83rem; color: var(--text-2);
+      line-height: 1.55; margin-bottom: 13px;
+    }
+    .rsvp-counts {
+      display: flex; gap: 14px; flex-wrap: wrap;
+      font-size: 0.74rem; color: var(--text-3); margin-bottom: 11px;
+    }
+    .rsvp-ct { display: flex; align-items: center; gap: 5px; }
+    .dot-sm  { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .rsvp-row { display: flex; gap: 7px; margin-bottom: 11px; }
+    .rsvp-btn {
+      flex: 1; min-width: 0;
+      padding: 7px 4px; border-radius: var(--r-sm);
+      font-family: var(--f-display); font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      border: 1px solid var(--border); color: var(--text-2);
+      transition: all 0.15s; text-align: center;
+    }
+    .rsvp-btn.going  { border-color: var(--green); color: var(--green); }
+    .rsvp-btn.maybe  { border-color: var(--amber); color: var(--amber); }
+    .rsvp-btn.cantgo { border-color: var(--red);   color: var(--red);   }
+    .rsvp-btn.going.on  { background: var(--green);  color: #000; }
+    .rsvp-btn.maybe.on  { background: var(--amber);  color: #000; }
+    .rsvp-btn.cantgo.on { background: var(--red);    color: #fff; }
+    .rsvp-btn:hover { opacity: 0.8; }
+    .checkin-btn {
+      width: 100%; padding: 10px;
+      background: transparent; border: 1px solid var(--accent-border);
+      border-radius: var(--r-sm); color: var(--accent);
+      font-family: var(--f-display); font-size: 0.78rem; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      transition: background 0.15s;
+    }
+    .checkin-btn:hover, .checkin-btn.in { background: var(--accent-lo); }
+    .meet-ftr {
+      display: flex; gap: 8px; padding: 10px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .btn-sm-ghost {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-3); border-radius: 6px;
+      padding: 5px 11px;
+      font-family: var(--f-display); font-size: 0.68rem;
+      font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      transition: all 0.15s;
+    }
+    .btn-sm-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm-del:hover   { border-color: var(--red); color: var(--red); }
+
+    /* ============================================================
+       MAP / CHECK-IN TAB
+       ============================================================ */
+    .cruise-card {
+      background: linear-gradient(135deg, #100804 0%, #09090B 100%);
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r);
+      padding: 18px; margin-bottom: 16px;
+    }
+    .cruise-title {
+      font-family: var(--f-display);
+      font-size: 1.15rem; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    .pulse {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      animation: pulseAnim 2s infinite;
+    }
+    @keyframes pulseAnim {
+      0%,100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+      50%      { box-shadow: 0 0 0 7px transparent; }
+    }
+    .cruise-desc { font-size: 0.81rem; color: var(--text-2); margin-bottom: 10px; line-height: 1.55; }
+    .cruise-note {
+      font-size: 0.72rem; color: var(--text-3);
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 12px; margin-bottom: 14px; line-height: 1.5;
+    }
+    .cruise-btns { display: flex; gap: 10px; }
+    .btn-cruise {
+      flex: 1; padding: 10px; border-radius: var(--r-sm);
+      font-family: var(--f-display); font-size: 0.78rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      transition: all 0.15s;
+    }
+    .btn-start {
+      background: var(--accent); color: #fff;
+      box-shadow: 0 0 14px var(--accent-glow);
+    }
+    .btn-start:hover { background: var(--accent-hi); }
+    .btn-stop {
+      background: transparent; border: 1px solid rgba(239,68,68,0.35); color: var(--red);
+    }
+    .btn-stop:hover  { background: rgba(239,68,68,0.1); }
+    .btn-stop.dimmed { opacity: 0.4; }
+
+    /* Map placeholder */
+    .map-wrap { border-radius: var(--r); overflow: hidden; margin-bottom: 16px; }
+    /* FUTURE: Replace .map-grid with a real Mapbox/Google Maps embed */
+    .map-grid {
+      height: 260px;
+      background:
+        repeating-linear-gradient(0deg,   rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 38px),
+        repeating-linear-gradient(90deg,  rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 38px),
+        linear-gradient(180deg, #09090F 0%, #07070D 100%);
+      border: 1px solid var(--border);
+      border-bottom: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; position: relative;
+    }
+    .map-grid::before {
+      content: '';
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      width: 140px; height: 140px;
+      background: radial-gradient(circle, rgba(232,68,26,0.08) 0%, transparent 70%);
+    }
+    .map-pin {
+      width: 34px; height: 34px; border-radius: 50% 50% 50% 0;
+      background: var(--accent); transform: rotate(-45deg);
+      box-shadow: 0 0 22px var(--accent-glow); position: relative; z-index: 1;
+    }
+    .map-lbl {
+      font-family: var(--f-display); font-size: 0.82rem; font-weight: 600;
+      color: var(--text-3); text-transform: uppercase; letter-spacing: 0.07em;
+      text-align: center; z-index: 1;
+    }
+    .map-sub { font-size: 0.72rem; color: var(--text-3); z-index: 1; text-align: center; }
+    .map-note {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-top: none; padding: 12px 14px;
+      font-size: 0.76rem; color: var(--text-3); line-height: 1.5;
+    }
+
+    /* Check-in list */
+    .ci-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .ci-item:last-child { border-bottom: none; }
+    .ci-av {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--accent-lo); border: 1px solid var(--accent-border);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--f-display); font-size: 0.85rem; font-weight: 700;
+      color: var(--accent); flex-shrink: 0;
+    }
+    .ci-name { font-size: 0.85rem; font-weight: 500; }
+    .ci-car  { font-size: 0.72rem; color: var(--text-3); }
+    .ci-exp  {
+      margin-left: auto; flex-shrink: 0;
+      font-family: var(--f-display); font-size: 0.68rem; font-weight: 700;
+      color: var(--amber); letter-spacing: 0.04em;
+    }
+    .ci-footnote {
+      font-size: 0.72rem; color: var(--text-3);
+      text-align: center; margin-top: 12px;
+    }
+
+    /* ============================================================
+       PHOTO DROPS
+       ============================================================ */
+    .photo-grid {
+      display: grid; grid-template-columns: repeat(2,1fr);
+      gap: 10px; margin-bottom: 16px;
+    }
+    .photo-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      transition: border-color 0.18s, transform 0.18s;
+    }
+    .photo-card:hover { border-color: var(--border2); transform: scale(1.015); }
+    .photo-card.wide { grid-column: 1 / -1; }
+    .photo-thumb {
+      width: 100%; aspect-ratio: 4/3;
+      background: linear-gradient(135deg, #181820 0%, #0E0E14 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.2rem; color: var(--text-3);
+      background-size: cover; background-position: center;
+    }
+    .photo-card.wide .photo-thumb { aspect-ratio: 16/9; font-size: 3.5rem; }
+    .photo-info { padding: 9px 10px; }
+    .photo-cap  { font-size: 0.78rem; color: var(--text); line-height: 1.4; }
+    .photo-meta {
+      font-family: var(--f-display); font-size: 0.66rem; font-weight: 600;
+      color: var(--text-3); letter-spacing: 0.04em; margin-top: 4px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .photo-del {
+      background: none; border: none; cursor: pointer;
+      color: var(--red); font-size: 0.72rem; opacity: 0.5;
+      transition: opacity 0.15s;
+    }
+    .photo-del:hover { opacity: 1; }
+
+    /* ============================================================
+       ANNOUNCEMENTS
+       ============================================================ */
+    .ann-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .ann-card:hover { border-color: var(--border2); }
+    .ann-stripe { height: 3px; }
+    .ann-stripe.info    { background: var(--blue); }
+    .ann-stripe.warning { background: var(--amber); }
+    .ann-stripe.alert   { background: var(--accent); }
+    .ann-bdy { padding: 14px 16px; }
+    .ann-top {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .ann-tag {
+      font-family: var(--f-display); font-size: 0.62rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 4px;
+    }
+    .ann-tag.info    { background: rgba(59,130,246,0.14); color: #60A5FA; }
+    .ann-tag.warning { background: rgba(245,158,11,0.14); color: var(--amber); }
+    .ann-tag.alert   { background: var(--accent-lo);       color: var(--accent); }
+    .ann-date { font-size: 0.7rem; color: var(--text-3); }
+    .ann-title {
+      font-family: var(--f-display);
+      font-size: 1.08rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px;
+    }
+    .ann-txt  { font-size: 0.83rem; color: var(--text-2); line-height: 1.55; }
+    .ann-ftr  {
+      padding: 8px 16px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.72rem; color: var(--text-3);
+    }
+    .ann-ftr strong { color: var(--text-2); }
+    .ann-ftr-del {
+      background: none; border: none; cursor: pointer;
+      color: var(--red); font-size: 0.72rem; opacity: 0.5;
+      font-family: var(--f-display); font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      transition: opacity 0.15s;
+    }
+    .ann-ftr-del:hover { opacity: 1; }
+
+    /* ============================================================
+       RESPONSIVE — Tablet / Desktop
+       ============================================================ */
+    @media (min-width: 600px) {
+      .tab-section { padding: 22px 22px; max-width: 780px; margin: 0 auto; }
+      .photo-grid  { grid-template-columns: repeat(3,1fr); }
+    }
+    @media (min-width: 1024px) {
+      .tab-section { max-width: 860px; }
+      .nav-items   { max-width: 560px; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       HEADER
+       RENAME: Update "Garage" and "Circle" text below
+       ============================================================ -->
+  <header class="app-header">
+    <div class="logo">
+      <div class="logo-icon">🔧</div>
+      <!-- RENAME: change "Garage" and "Circle" here -->
+      <div class="logo-text">Garage <em>Circle</em></div>
+    </div>
+    <div class="header-pill">Members Only</div>
+  </header>
+
+  <!-- Toast notification (auto-show/hide) -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ============================================================
+       MAIN CONTENT
+       ============================================================ -->
+  <main class="main">
+
+    <!-- ======================================================
+         HOME TAB
+         ====================================================== -->
+    <section class="tab-section active" id="tab-home">
+
+      <!-- Hero banner -->
+      <div class="hero">
+        <!-- RENAME: Update eyebrow text -->
+        <div class="hero-eyebrow">🏁 Your Garage Circle</div>
+        <div class="hero-h1">Welcome<br>Back.</div>
+        <div class="hero-meta" id="home-meta">Loading crew stats...</div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-n" id="stat-members">0</div>
+          <div class="stat-lbl">Members</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-n" id="stat-meets">0</div>
+          <div class="stat-lbl">Meets</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-n" id="stat-photos">0</div>
+          <div class="stat-lbl">Photos</div>
+        </div>
+      </div>
+
+      <!-- Next Meet preview -->
+      <div class="sec-hdr">
+        <div class="sec-title">Next <em>Meet</em></div>
+      </div>
+      <div id="home-next-meet"></div>
+
+      <!-- Activity feed -->
+      <div class="sec-hdr" style="margin-top:18px">
+        <div class="sec-title">Activity</div>
+      </div>
+      <div class="card">
+        <div class="card-body" id="activity-feed"></div>
+      </div>
+
+    </section><!-- /home -->
+
+
+    <!-- ======================================================
+         GARAGE TAB
+         ====================================================== -->
+    <section class="tab-section" id="tab-garage">
+
+      <div class="sec-hdr">
+        <div class="sec-title">The <em>Garage</em></div>
+        <button class="btn-add" id="toggle-add-member" title="Add Member" aria-label="Add Member">+</button>
+      </div>
+
+      <!-- Add Member inline form -->
+      <div class="inline-form" id="add-member-form">
+        <div class="form-title">Add Member</div>
+        <div class="form-grid">
+          <div class="form-grp">
+            <label class="form-lbl">Name *</label>
+            <input type="text" class="form-inp" id="m-name" placeholder="e.g. Jake Torres">
+          </div>
+          <div class="form-2col">
+            <div class="form-grp">
+              <label class="form-lbl">Year</label>
+              <input type="text" class="form-inp" id="m-year" placeholder="e.g. 2004" inputmode="numeric">
+            </div>
+            <div class="form-grp">
+              <label class="form-lbl">Make *</label>
+              <input type="text" class="form-inp" id="m-make" placeholder="e.g. Subaru">
+            </div>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Model *</label>
+            <input type="text" class="form-inp" id="m-model" placeholder="e.g. WRX STI">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Mods</label>
+            <textarea class="form-inp" id="m-mods" placeholder="Coilovers, intake, tune..."></textarea>
+          </div>
+          <div class="form-2col">
+            <div class="form-grp">
+              <label class="form-lbl">Instagram</label>
+              <input type="text" class="form-inp" id="m-ig" placeholder="@handle">
+            </div>
+            <div class="form-grp">
+              <label class="form-lbl">TikTok</label>
+              <input type="text" class="form-inp" id="m-tt" placeholder="@handle">
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary" id="save-member-btn">Save Member</button>
+          <button class="btn-cancel"  id="cancel-member-btn">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Members list — populated by JS -->
+      <div id="members-list"></div>
+
+    </section><!-- /garage -->
+
+
+    <!-- ======================================================
+         MEETS TAB
+         ====================================================== -->
+    <section class="tab-section" id="tab-meets">
+
+      <div class="sec-hdr">
+        <div class="sec-title">Meets <em>&amp;</em> Events</div>
+        <button class="btn-add" id="toggle-add-meet" title="Add Meet" aria-label="Add Meet">+</button>
+      </div>
+
+      <!-- Add/Edit Meet inline form -->
+      <div class="inline-form" id="add-meet-form">
+        <div class="form-title" id="meet-form-ttl">Create Meet</div>
+        <!-- Hidden: stores ID when editing -->
+        <input type="hidden" id="edit-meet-id">
+        <div class="form-grid">
+          <div class="form-grp">
+            <label class="form-lbl">Meet Name *</label>
+            <input type="text" class="form-inp" id="meet-name" placeholder="e.g. Friday Night Cruise">
+          </div>
+          <div class="form-2col">
+            <div class="form-grp">
+              <label class="form-lbl">Date *</label>
+              <input type="date" class="form-inp" id="meet-date">
+            </div>
+            <div class="form-grp">
+              <label class="form-lbl">Time</label>
+              <input type="time" class="form-inp" id="meet-time">
+            </div>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Location *</label>
+            <input type="text" class="form-inp" id="meet-loc" placeholder="e.g. Harbor Parking Garage, Level 2">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Description</label>
+            <textarea class="form-inp" id="meet-desc" placeholder="What's the vibe? Cruise? Cars & Coffee?"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary" id="save-meet-btn">Save Meet</button>
+          <button class="btn-cancel"  id="cancel-meet-btn">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Meets list — populated by JS -->
+      <div id="meets-list"></div>
+
+    </section><!-- /meets -->
+
+
+    <!-- ======================================================
+         MAP / CHECK-IN TAB
+         FUTURE: Replace map-grid with a real Mapbox embed.
+                 Wire Cruise Mode buttons to navigator.geolocation
+                 + Supabase Realtime for live pin updates.
+         ====================================================== -->
+    <section class="tab-section" id="tab-map">
+
+      <div class="sec-hdr">
+        <div class="sec-title">Check<em>-In</em></div>
+      </div>
+
+      <!-- Cruise Mode card -->
+      <div class="cruise-card">
+        <div class="cruise-title">
+          <div class="pulse"></div>
+          Cruise Mode
+        </div>
+        <div class="cruise-desc">
+          Share your live location with the crew during a cruise.
+          Location sharing is temporary and stops automatically when you end the session.
+        </div>
+        <div class="cruise-note">
+          🔒 Your location is only visible to Garage Circle members during active sessions.
+          Nothing is stored permanently once you stop sharing.
+        </div>
+        <div class="cruise-btns">
+          <!-- FUTURE: onclick → navigator.geolocation.watchPosition() + push to Supabase Realtime channel -->
+          <button class="btn-cruise btn-start" id="cruise-start">📍 Start Cruise Mode</button>
+          <!-- FUTURE: onclick → clearWatch() + remove from Supabase Realtime channel -->
+          <button class="btn-cruise btn-stop dimmed" id="cruise-stop">⏹ Stop Sharing</button>
+        </div>
+      </div>
+
+      <!-- Map placeholder -->
+      <!-- FUTURE: remove map-wrap entirely and replace with:
+           <div id="map" style="height:260px;border-radius:12px"></div>
+           Then init Mapbox GL JS or Google Maps API here -->
+      <div class="map-wrap">
+        <div class="map-grid">
+          <div class="map-pin"></div>
+          <div class="map-lbl">Live check-ins will<br>appear here later</div>
+          <div class="map-sub">Map integration coming soon</div>
+        </div>
+        <div class="map-note">
+          ⚙️ <strong>Future:</strong> Mapbox GL JS or Google Maps will load here.
+          Member pins will update in real-time via Supabase Realtime channels.
+        </div>
+      </div>
+
+      <!-- Checked-in members -->
+      <div class="sec-hdr" style="margin-top:4px">
+        <div class="sec-title">Checked <em>In</em></div>
+      </div>
+      <div class="card">
+        <div class="card-body" id="checkin-list"></div>
+      </div>
+      <!-- Auto-expiry concept note -->
+      <div class="ci-footnote">⏱ Check-ins auto-expire after 4 hours for privacy.</div>
+
+    </section><!-- /map -->
+
+
+    <!-- ======================================================
+         PHOTOS TAB
+         FUTURE: Replace URL input with Supabase Storage upload.
+         ====================================================== -->
+    <section class="tab-section" id="tab-photos">
+
+      <div class="sec-hdr">
+        <div class="sec-title">Photo <em>Drops</em></div>
+        <button class="btn-add" id="toggle-add-photo" title="Drop a Photo" aria-label="Drop a Photo">+</button>
+      </div>
+
+      <!-- Add Photo inline form -->
+      <!-- FUTURE: Add a real <input type="file"> and upload to Supabase Storage -->
+      <div class="inline-form" id="add-photo-form">
+        <div class="form-title">Drop a Photo</div>
+        <div class="form-grid">
+          <div class="form-grp">
+            <label class="form-lbl">Photo URL (optional)</label>
+            <input type="url" class="form-inp" id="ph-url" placeholder="https://...jpg — or leave blank for placeholder">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Caption *</label>
+            <input type="text" class="form-inp" id="ph-cap" placeholder="e.g. Friday night vibes 🔥">
+          </div>
+          <div class="form-2col">
+            <div class="form-grp">
+              <label class="form-lbl">Your Name *</label>
+              <input type="text" class="form-inp" id="ph-author" placeholder="e.g. Jake">
+            </div>
+            <div class="form-grp">
+              <label class="form-lbl">Car</label>
+              <input type="text" class="form-inp" id="ph-car" placeholder="e.g. 04 STI">
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary" id="save-photo-btn">Drop It</button>
+          <button class="btn-cancel"  id="cancel-photo-btn">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Photo grid — populated by JS -->
+      <div class="photo-grid" id="photo-grid"></div>
+
+    </section><!-- /photos -->
+
+
+    <!-- ======================================================
+         ANNOUNCEMENTS TAB
+         ====================================================== -->
+    <section class="tab-section" id="tab-announce">
+
+      <div class="sec-hdr">
+        <div class="sec-title">Crew <em>News</em></div>
+        <button class="btn-add" id="toggle-add-ann" title="Post Announcement" aria-label="Post Announcement">+</button>
+      </div>
+
+      <!-- Add Announcement inline form -->
+      <div class="inline-form" id="add-ann-form">
+        <div class="form-title">New Announcement</div>
+        <div class="form-grid">
+          <div class="form-grp">
+            <label class="form-lbl">Title *</label>
+            <input type="text" class="form-inp" id="ann-title" placeholder="e.g. New Rules for Meets">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Message *</label>
+            <textarea class="form-inp" id="ann-text" placeholder="What does the crew need to know?"></textarea>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Type</label>
+            <select class="form-inp" id="ann-type">
+              <option value="info">ℹ️ Info</option>
+              <option value="warning">⚠️ Heads Up</option>
+              <option value="alert">🚨 Alert</option>
+            </select>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Posted By</label>
+            <input type="text" class="form-inp" id="ann-author" placeholder="e.g. Admin">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary" id="save-ann-btn">Post It</button>
+          <button class="btn-cancel"  id="cancel-ann-btn">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Announcements list — populated by JS -->
+      <div id="ann-list"></div>
+
+    </section><!-- /announce -->
+
+  </main><!-- /main -->
+
+
+  <!-- ============================================================
+       BOTTOM NAV
+       ============================================================ -->
+  <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-items">
+
+      <button class="nav-item active" data-tab="home" aria-label="Home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/>
+          <path d="M9 21V12h6v9"/>
+        </svg>
+        Home
+      </button>
+
+      <button class="nav-item" data-tab="garage" aria-label="Garage">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v9a2 2 0 01-2 2h-2"/>
+          <circle cx="7.5" cy="17.5" r="2.5"/>
+          <circle cx="17.5" cy="17.5" r="2.5"/>
+        </svg>
+        Garage
+      </button>
+
+      <button class="nav-item" data-tab="meets" aria-label="Meets">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <path d="M16 2v4M8 2v4M3 10h18"/>
+        </svg>
+        Meets
+      </button>
+
+      <button class="nav-item" data-tab="map" aria-label="Check-In">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+          <circle cx="12" cy="9" r="2.5"/>
+        </svg>
+        Check-In
+      </button>
+
+      <button class="nav-item" data-tab="photos" aria-label="Photos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+        Photos
+      </button>
+
+      <button class="nav-item" data-tab="announce" aria-label="Announcements">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 01-3.46 0"/>
+        </svg>
+        News
+      </button>
+
+    </div>
+  </nav><!-- /bottom-nav -->
+
+
+  <!-- ============================================================
+       JAVASCRIPT
+       ============================================================ -->
+  <script>
+  /*
+  ================================================================
+    GARAGE CIRCLE — App Logic
+  ================================================================
+
+    SECTIONS:
+      1. Seed / Default Data
+      2. localStorage Helpers
+      3. Tab Navigation
+      4. Home Dashboard
+      5. Members / Garage
+      6. Meets / Events
+      7. Map / Check-In
+      8. Photo Drops
+      9. Announcements
+      10. Utilities (toast, format helpers)
+      11. Init
+
+  ================================================================
+    FUTURE BACKEND — WHERE TO CONNECT SUPABASE
+  ================================================================
+
+    1. AUTHENTICATION
+       Install: npm install @supabase/supabase-js
+       Replace seedIfNeeded() + all lsGet/lsSet calls with:
+         const { data: { user } } = await supabase.auth.getUser()
+       Use email magic-link for invite-only access.
+
+    2. DATABASE (replace localStorage)
+       Read:   const { data } = await supabase.from('meets').select('*')
+       Write:  const { error } = await supabase.from('meets').insert([{...}])
+       Delete: await supabase.from('meets').delete().eq('id', id)
+
+    3. PHOTO STORAGE (replace URL input)
+       const { data } = await supabase.storage.from('drops').upload(path, file)
+       const url = supabase.storage.from('drops').getPublicUrl(path).data.publicUrl
+
+    4. REALTIME CHECK-INS (live map pins)
+       const ch = supabase.channel('checkins')
+       ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checkins' }, handler)
+       ch.subscribe()
+
+    5. CRUISE MODE GPS (live location sharing)
+       const watchId = navigator.geolocation.watchPosition(pos => {
+         supabase.channel('cruise').send({ type: 'broadcast', event: 'location',
+           payload: { lat: pos.coords.latitude, lng: pos.coords.longitude }
+         })
+       })
+       // Stop: navigator.geolocation.clearWatch(watchId)
+
+    6. MAP INTEGRATION
+       Replace .map-grid div with: <div id="map" style="height:260px"></div>
+       Then: mapboxgl.accessToken = 'YOUR_TOKEN'
+             const map = new mapboxgl.Map({ container: 'map', style: '...' })
+             // Add member markers from Supabase Realtime channel
+
+  ================================================================
+  */
+
+
+  // ==============================================================
+  // 1. SEED / DEFAULT DATA
+  //    Runs once on first load. After that, localStorage is used.
+  //    Edit these objects to change the demo content.
+  // ==============================================================
+
+  // Helper: date string N days from today
+  function futureDate(n) {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return d.toISOString().split('T')[0];
+  }
+
+  const SEED = {
+    members: [
+      {
+        id: 'm1',
+        name: 'Jake Torres',
+        year: '2004', make: 'Subaru', model: 'WRX STI',
+        mods: 'COBB Accessport tune · AEM cold-air intake · BC Racing coilovers · Whiteline endlinks · STI pink injectors',
+        ig: '@jakestirocks', tt: '@jakewrx'
+      },
+      {
+        id: 'm2',
+        name: 'Maya Chen',
+        year: '2022', make: 'Honda', model: 'Civic Type R',
+        mods: 'Mugen rear wing · HKS cat-back exhaust · Enkei RPF1 wheels · AP Racing big brake kit',
+        ig: '@mayadrives', tt: ''
+      },
+      {
+        id: 'm3',
+        name: 'Ray Delgado',
+        year: '1999', make: 'Nissan', model: 'Silvia S15',
+        mods: 'SR20DET swap · HKS GT2530 turbo · Link G4+ ECU · Bride seats · Work Meister S1R wheels',
+        ig: '@rayd_s15', tt: '@raydelgadodrift'
+      }
+    ],
+
+    meets: [
+      {
+        id: 'e1',
+        title: 'Friday Night Cruise',
+        date: futureDate(6),
+        time: '21:00',
+        location: 'Harbor Parking Garage — Level 2',
+        desc: 'Monthly cruise night. Cars gather 8:30 PM. Food trucks on-site. Cruise to canyon road after midnight. Respect the lot — no revving near the entrance.',
+        rsvp: { going: 5, maybe: 2, cantgo: 1 },
+        myRsvp: null,
+        checkedIn: false
+      },
+      {
+        id: 'e2',
+        title: 'Cars & Coffee — Eastside',
+        date: futureDate(13),
+        time: '07:30',
+        location: 'Eastside Industrial Plaza — Lot C',
+        desc: 'Show and shine, early morning. Coffee, donuts, all builds welcome. Judging starts 10 AM. Spectators free — bring your crew.',
+        rsvp: { going: 12, maybe: 4, cantgo: 0 },
+        myRsvp: 'going',
+        checkedIn: false
+      }
+    ],
+
+    photos: [
+      { id: 'p1', url: '', emoji: '🌙', caption: 'Friday night vibes at the harbor — absolutely packed 🔥', author: 'Jake Torres', car: '04 STI', date: '2024-11-01', wide: true  },
+      { id: 'p2', url: '', emoji: '🏁', caption: "Maya pulling out of C&C, judge loved it", author: 'Ray Delgado', car: '99 S15', date: '2024-10-26', wide: false },
+      { id: 'p3', url: '', emoji: '🌑', caption: 'Late night canyon run. No footage. 👀',  author: 'Maya Chen',   car: '22 Type R', date: '2024-10-19', wide: false },
+      { id: 'p4', url: '', emoji: '🔧', caption: 'Freshly wrapped in Satin PPF',           author: 'Jake Torres', car: '04 STI', date: '2024-10-15', wide: false }
+    ],
+
+    announcements: [
+      {
+        id: 'a1',
+        title: 'New Spot Confirmed — Harbor Garage',
+        text: 'We have secured a monthly spot at Harbor Parking Garage, first Friday of every month. Entry is free — show the group screenshot to security at the gate.',
+        type: 'info', author: 'Admin', date: '2024-11-01'
+      },
+      {
+        id: 'a2',
+        title: 'Zero Burnouts — Final Warning',
+        text: 'We nearly lost the parking garage last month. Absolutely no burnouts, skids, or revving at the entrance. Violators are removed from the group, no exceptions.',
+        type: 'alert', author: 'Admin', date: '2024-10-28'
+      },
+      {
+        id: 'a3',
+        title: 'Cars & Coffee — 12 Slots Confirmed',
+        text: 'We have 12 reserved spots for Eastside Cars & Coffee on the 14th. DM admin if you still need a slot. Judging starts 10 AM sharp.',
+        type: 'warning', author: 'Admin', date: '2024-10-22'
+      }
+    ],
+
+    // Demo check-ins (shown in the Map tab)
+    // FUTURE: replace with live Supabase Realtime data
+    checkins: [
+      { name: 'Jake Torres',  car: '04 STI',     initials: 'JT', time: '9:14 PM', expiresIn: '3h 46m' },
+      { name: 'Ray Delgado',  car: '99 S15',     initials: 'RD', time: '9:22 PM', expiresIn: '3h 38m' },
+      { name: 'Maya Chen',    car: '22 Type R',  initials: 'MC', time: '9:41 PM', expiresIn: '3h 19m' }
+    ]
+  };
+
+
+  // ==============================================================
+  // 2. LOCALSTORAGE HELPERS
+  //    FUTURE: swap lsGet / lsSet for Supabase calls
+  // ==============================================================
+
+  const LS = {
+    members:       'gc_members',
+    meets:         'gc_meets',
+    photos:        'gc_photos',
+    announcements: 'gc_announcements',
+    checkins:      'gc_checkins',
+    seeded:        'gc_seeded'
+  };
+
+  function lsGet(key) {
+    try { return JSON.parse(localStorage.getItem(key)) || []; }
+    catch { return []; }
+  }
+  function lsSet(key, val) {
+    localStorage.setItem(key, JSON.stringify(val));
+  }
+  function genId() {
+    return '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  // Seed once on first load
+  function seedIfNeeded() {
+    if (!localStorage.getItem(LS.seeded)) {
+      lsSet(LS.members,       SEED.members);
+      lsSet(LS.meets,         SEED.meets);
+      lsSet(LS.photos,        SEED.photos);
+      lsSet(LS.announcements, SEED.announcements);
+      lsSet(LS.checkins,      SEED.checkins);
+      localStorage.setItem(LS.seeded, '1');
+    }
+  }
+
+
+  // ==============================================================
+  // 3. TAB NAVIGATION
+  // ==============================================================
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+    const sec = document.getElementById('tab-' + name);
+    const nav = document.querySelector(`.nav-item[data-tab="${name}"]`);
+    if (sec) sec.classList.add('active');
+    if (nav) nav.classList.add('active');
+
+    // Render the activated tab
+    const renders = {
+      home:     renderHome,
+      garage:   renderMembers,
+      meets:    renderMeets,
+      map:      renderCheckins,
+      photos:   renderPhotos,
+      announce: renderAnnouncements
+    };
+    if (renders[name]) renders[name]();
+  }
+
+  // Wire nav buttons
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  // Make switchTab available globally (used in home-tab links)
+  window.switchTab = switchTab;
+
+
+  // ==============================================================
+  // 4. HOME DASHBOARD
+  // ==============================================================
+
+  function renderHome() {
+    const members      = lsGet(LS.members);
+    const meets        = lsGet(LS.meets);
+    const photos       = lsGet(LS.photos);
+    const announcements = lsGet(LS.announcements);
+
+    // Stats
+    document.getElementById('stat-members').textContent = members.length;
+    document.getElementById('stat-meets').textContent   = meets.length;
+    document.getElementById('stat-photos').textContent  = photos.length;
+
+    // Hero meta
+    document.getElementById('home-meta').textContent =
+      `${members.length} member${members.length !== 1 ? 's' : ''} · ` +
+      `${meets.length} upcoming meet${meets.length !== 1 ? 's' : ''} · ` +
+      `${photos.length} photo drop${photos.length !== 1 ? 's' : ''}`;
+
+    // Next meet preview
+    const sorted = [...meets].sort((a,b) => new Date(a.date) - new Date(b.date));
+    const nextMeet = sorted[0];
+    const nmEl = document.getElementById('home-next-meet');
+    if (nextMeet) {
+      nmEl.innerHTML = `
+        <div class="meet-card" style="margin-bottom:0">
+          <div class="meet-topbar"></div>
+          <div class="meet-bdy">
+            <div class="meet-date-badge">📅 ${fmtDate(nextMeet.date)} · ${fmtTime(nextMeet.time)}</div>
+            <div class="meet-title">${esc(nextMeet.title)}</div>
+            <div class="meet-loc">📍 ${esc(nextMeet.location)}</div>
+            <button class="checkin-btn" onclick="switchTab('meets')">View All Meets →</button>
+          </div>
+        </div>`;
+    } else {
+      nmEl.innerHTML = `<div class="empty"><div class="empty-icon">🗓</div><div class="empty-title">No Meets Yet</div><div class="empty-sub">Add one in the Meets tab</div></div>`;
+    }
+
+    // Activity feed — build from all data
+    const feed = [];
+    members.forEach(m => feed.push({ txt: `<strong>${esc(m.name)}</strong> joined with their ${esc(m.year)} ${esc(m.make)} ${esc(m.model)}`, t: 'Earlier' }));
+    meets.forEach(m   => feed.push({ txt: `<strong>${esc(m.title)}</strong> meet scheduled for ${fmtDate(m.date)}`, t: 'Recently' }));
+    photos.forEach(p  => feed.push({ txt: `<strong>${esc(p.author)}</strong> dropped a photo: "${esc(p.caption)}"`, t: 'Earlier' }));
+    announcements.forEach(a => feed.push({ txt: `<strong>New announcement:</strong> ${esc(a.title)}`, t: fmtDate(a.date) }));
+
+    const feedEl = document.getElementById('activity-feed');
+    feedEl.innerHTML = feed.slice(0,7).map(a =>
+      `<div class="activity-item">
+        <div class="act-dot"></div>
+        <div class="act-txt">${a.txt}</div>
+        <div class="act-time">${a.t}</div>
+      </div>`
+    ).join('') || '<div style="font-size:0.84rem;color:var(--text-3)">No activity yet.</div>';
+  }
+
+
+  // ==============================================================
+  // 5. MEMBERS / GARAGE
+  // ==============================================================
+
+  function renderMembers() {
+    const members = lsGet(LS.members);
+    const el = document.getElementById('members-list');
+
+    if (!members.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-title">No Members Yet</div><div class="empty-sub">Tap + to add your first member</div></div>`;
+      return;
+    }
+
+    el.innerHTML = members.map(m => `
+      <div class="member-card">
+        <div class="member-hdr">
+          <div class="avatar">${initials(m.name)}</div>
+          <div>
+            <div class="member-name">${esc(m.name)}</div>
+            <div class="member-car">${esc(m.year)} ${esc(m.make)} ${esc(m.model)}</div>
+          </div>
+        </div>
+        <div class="member-bdy">
+          <div class="micro-lbl">Mods</div>
+          <div class="mods-txt">${esc(m.mods) || 'Stock 🤫'}</div>
+          ${(m.ig || m.tt) ? `<div class="handles">
+            ${m.ig ? `<div class="handle-tag">IG ${esc(m.ig)}</div>` : ''}
+            ${m.tt ? `<div class="handle-tag">TT ${esc(m.tt)}</div>`  : ''}
+          </div>` : ''}
+        </div>
+        <div class="member-ftr">
+          <button class="btn-del" onclick="deleteMember('${m.id}')">🗑 Remove</button>
+        </div>
+      </div>`).join('');
+  }
+
+  // Toggle add-member form
+  document.getElementById('toggle-add-member').addEventListener('click', () => {
+    document.getElementById('add-member-form').classList.toggle('open');
+  });
+  document.getElementById('cancel-member-btn').addEventListener('click', () => {
+    document.getElementById('add-member-form').classList.remove('open');
+    clearMemberForm();
+  });
+
+  // Save member
+  document.getElementById('save-member-btn').addEventListener('click', () => {
+    const name  = document.getElementById('m-name').value.trim();
+    const make  = document.getElementById('m-make').value.trim();
+    const model = document.getElementById('m-model').value.trim();
+    if (!name || !make || !model) { toast('Name, Make & Model are required'); return; }
+
+    const m = {
+      id: genId(),
+      name,
+      year:  document.getElementById('m-year').value.trim(),
+      make, model,
+      mods:  document.getElementById('m-mods').value.trim(),
+      ig:    document.getElementById('m-ig').value.trim(),
+      tt:    document.getElementById('m-tt').value.trim()
+    };
+    const arr = lsGet(LS.members);
+    arr.push(m);
+    lsSet(LS.members, arr);
+    clearMemberForm();
+    document.getElementById('add-member-form').classList.remove('open');
+    renderMembers();
+    toast('Member added 🚗');
+  });
+
+  function clearMemberForm() {
+    ['m-name','m-year','m-make','m-model','m-mods','m-ig','m-tt'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+  }
+
+  function deleteMember(id) {
+    if (!confirm('Remove this member from the garage?')) return;
+    lsSet(LS.members, lsGet(LS.members).filter(m => m.id !== id));
+    renderMembers();
+    toast('Member removed');
+  }
+  window.deleteMember = deleteMember;
+
+
+  // ==============================================================
+  // 6. MEETS / EVENTS
+  // ==============================================================
+
+  function renderMeets() {
+    const meets = lsGet(LS.meets);
+    const el = document.getElementById('meets-list');
+
+    if (!meets.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🏁</div><div class="empty-title">No Meets Yet</div><div class="empty-sub">Tap + to schedule a meet</div></div>`;
+      return;
+    }
+
+    const sorted = [...meets].sort((a,b) => new Date(a.date) - new Date(b.date));
+
+    el.innerHTML = sorted.map(m => `
+      <div class="meet-card" id="mc-${m.id}">
+        <div class="meet-topbar"></div>
+        <div class="meet-bdy">
+          <div class="meet-date-badge">📅 ${fmtDate(m.date)} · ${fmtTime(m.time)}</div>
+          <div class="meet-title">${esc(m.title)}</div>
+          <div class="meet-loc">📍 ${esc(m.location)}</div>
+          <div class="meet-desc">${esc(m.desc)}</div>
+
+          <!-- RSVP counts -->
+          <div class="rsvp-counts">
+            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--green)"></div>${m.rsvp.going} Going</div>
+            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--amber)"></div>${m.rsvp.maybe} Maybe</div>
+            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--red)"></div>${m.rsvp.cantgo} Can't Go</div>
+          </div>
+
+          <!-- RSVP buttons -->
+          <div class="rsvp-row">
+            <button class="rsvp-btn going  ${m.myRsvp==='going'  ? 'on':''}" onclick="setRsvp('${m.id}','going')">✓ Going</button>
+            <button class="rsvp-btn maybe  ${m.myRsvp==='maybe'  ? 'on':''}" onclick="setRsvp('${m.id}','maybe')">? Maybe</button>
+            <button class="rsvp-btn cantgo ${m.myRsvp==='cantgo' ? 'on':''}" onclick="setRsvp('${m.id}','cantgo')">✗ Can't Go</button>
+          </div>
+
+          <!-- Check-In -->
+          <!-- FUTURE: Connect to Supabase to log real check-ins with GPS + timestamp -->
+          <button class="checkin-btn ${m.checkedIn ? 'in' : ''}" onclick="checkIn('${m.id}')">
+            ${m.checkedIn ? '✓ Checked In — You\'re Here!' : '📍 Check In to This Meet'}
+          </button>
+        </div>
+        <div class="meet-ftr">
+          <button class="btn-sm-ghost" onclick="editMeet('${m.id}')">✏️ Edit</button>
+          <button class="btn-sm-ghost btn-sm-del" onclick="deleteMeet('${m.id}')">🗑 Delete</button>
+        </div>
+      </div>`).join('');
+  }
+
+  // Toggle add-meet form
+  document.getElementById('toggle-add-meet').addEventListener('click', () => {
+    // Ensure we're in "create" mode
+    document.getElementById('edit-meet-id').value = '';
+    document.getElementById('meet-form-ttl').textContent = 'Create Meet';
+    clearMeetForm();
+    document.getElementById('add-meet-form').classList.toggle('open');
+  });
+  document.getElementById('cancel-meet-btn').addEventListener('click', () => {
+    document.getElementById('add-meet-form').classList.remove('open');
+    clearMeetForm();
+  });
+
+  // Save (create or update) meet
+  document.getElementById('save-meet-btn').addEventListener('click', () => {
+    const title = document.getElementById('meet-name').value.trim();
+    const date  = document.getElementById('meet-date').value;
+    const loc   = document.getElementById('meet-loc').value.trim();
+    if (!title || !date || !loc) { toast('Name, Date & Location are required'); return; }
+
+    const meets = lsGet(LS.meets);
+    const editId = document.getElementById('edit-meet-id').value;
+
+    if (editId) {
+      // Edit existing
+      const idx = meets.findIndex(m => m.id === editId);
+      if (idx > -1) {
+        meets[idx] = { ...meets[idx], title, date,
+          time: document.getElementById('meet-time').value,
+          location: loc,
+          desc: document.getElementById('meet-desc').value.trim()
+        };
+      }
+      toast('Meet updated ✓');
+    } else {
+      // New meet
+      meets.push({
+        id: genId(), title, date,
+        time:     document.getElementById('meet-time').value,
+        location: loc,
+        desc:     document.getElementById('meet-desc').value.trim(),
+        rsvp:     { going: 0, maybe: 0, cantgo: 0 },
+        myRsvp:   null,
+        checkedIn: false
+      });
+      toast('Meet added 🏁');
+    }
+
+    lsSet(LS.meets, meets);
+    document.getElementById('add-meet-form').classList.remove('open');
+    clearMeetForm();
+    renderMeets();
+  });
+
+  function clearMeetForm() {
+    ['meet-name','meet-date','meet-time','meet-loc','meet-desc'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('edit-meet-id').value = '';
+  }
+
+  // Open form pre-filled for editing
+  function editMeet(id) {
+    const m = lsGet(LS.meets).find(x => x.id === id);
+    if (!m) return;
+    document.getElementById('edit-meet-id').value    = id;
+    document.getElementById('meet-form-ttl').textContent = 'Edit Meet';
+    document.getElementById('meet-name').value  = m.title;
+    document.getElementById('meet-date').value  = m.date;
+    document.getElementById('meet-time').value  = m.time;
+    document.getElementById('meet-loc').value   = m.location;
+    document.getElementById('meet-desc').value  = m.desc;
+    const form = document.getElementById('add-meet-form');
+    form.classList.add('open');
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function deleteMeet(id) {
+    if (!confirm('Delete this meet?')) return;
+    lsSet(LS.meets, lsGet(LS.meets).filter(m => m.id !== id));
+    renderMeets();
+    toast('Meet deleted');
+  }
+
+  // RSVP toggle
+  function setRsvp(meetId, status) {
+    const meets = lsGet(LS.meets);
+    const m = meets.find(x => x.id === meetId);
+    if (!m) return;
+    // Undo previous
+    if (m.myRsvp) m.rsvp[m.myRsvp] = Math.max(0, m.rsvp[m.myRsvp] - 1);
+    // Toggle off if same
+    if (m.myRsvp === status) { m.myRsvp = null; }
+    else { m.myRsvp = status; m.rsvp[status]++; }
+    lsSet(LS.meets, meets);
+    renderMeets();
+    const msgs = { going: '✅ You\'re going!', maybe: '🤔 Marked as maybe', cantgo: '❌ Can\'t make it' };
+    if (m.myRsvp) toast(msgs[m.myRsvp]);
+  }
+
+  // Check-in toggle
+  // FUTURE: log real check-in to Supabase with timestamp + GPS coordinates
+  function checkIn(meetId) {
+    const meets = lsGet(LS.meets);
+    const m = meets.find(x => x.id === meetId);
+    if (!m) return;
+    m.checkedIn = !m.checkedIn;
+    lsSet(LS.meets, meets);
+    renderMeets();
+    toast(m.checkedIn ? '📍 You\'re checked in!' : 'Check-in removed');
+  }
+
+  // Expose for onclick attributes
+  window.editMeet  = editMeet;
+  window.deleteMeet = deleteMeet;
+  window.setRsvp   = setRsvp;
+  window.checkIn   = checkIn;
+
+
+  // ==============================================================
+  // 7. MAP / CHECK-IN TAB
+  //    FUTURE: Replace demo data with Supabase Realtime subscription
+  // ==============================================================
+
+  function renderCheckins() {
+    const checkins = lsGet(LS.checkins);
+    const el = document.getElementById('checkin-list');
+
+    if (!checkins.length) {
+      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">📍</div><div class="empty-title">No One Checked In</div><div class="empty-sub">Check-ins show here when members arrive at a meet</div></div>`;
+      return;
+    }
+
+    el.innerHTML = checkins.map(c => `
+      <div class="ci-item">
+        <div class="ci-av">${esc(c.initials)}</div>
+        <div>
+          <div class="ci-name">${esc(c.name)}</div>
+          <div class="ci-car">${esc(c.car)} · Checked in ${esc(c.time)}</div>
+        </div>
+        <div class="ci-exp">⏱ ${esc(c.expiresIn)}</div>
+      </div>`).join('');
+  }
+
+  // Cruise mode placeholder behaviour
+  let cruiseOn = false;
+  document.getElementById('cruise-start').addEventListener('click', () => {
+    cruiseOn = true;
+    document.getElementById('cruise-start').style.opacity = '0.5';
+    document.getElementById('cruise-stop').classList.remove('dimmed');
+    toast('📍 Cruise Mode active — location sharing demo started');
+    // FUTURE: navigator.geolocation.watchPosition() → Supabase Realtime channel
+  });
+  document.getElementById('cruise-stop').addEventListener('click', () => {
+    if (!cruiseOn) return;
+    cruiseOn = false;
+    document.getElementById('cruise-start').style.opacity = '1';
+    document.getElementById('cruise-stop').classList.add('dimmed');
+    toast('⏹ Location sharing stopped');
+    // FUTURE: navigator.geolocation.clearWatch() + leave Supabase Realtime channel
+  });
+
+
+  // ==============================================================
+  // 8. PHOTO DROPS
+  //    FUTURE: Replace URL field with Supabase Storage file upload
+  // ==============================================================
+
+  const EMOJIS = ['🚗','🏎️','🔧','🌙','🏁','🔥','📸','⚡','🌃'];
+
+  function renderPhotos() {
+    const photos = lsGet(LS.photos);
+    const grid = document.getElementById('photo-grid');
+
+    if (!photos.length) {
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📸</div><div class="empty-title">No Photos Yet</div><div class="empty-sub">Drop the first photo from a meet</div></div>`;
+      return;
+    }
+
+    grid.innerHTML = photos.map(p => {
+      const bgStyle = p.url ? `background-image:url('${esc(p.url)}');background-size:cover;background-position:center;` : '';
+      return `
+        <div class="photo-card ${p.wide ? 'wide' : ''}">
+          <div class="photo-thumb" style="${bgStyle}">
+            ${p.url ? '' : `<span>${p.emoji || '📸'}</span>`}
+          </div>
+          <div class="photo-info">
+            <div class="photo-cap">${esc(p.caption)}</div>
+            <div class="photo-meta">
+              <span>${esc(p.author)} · ${esc(p.car)} · ${fmtDate(p.date)}</span>
+              <button class="photo-del" onclick="deletePhoto('${p.id}')" title="Delete photo">✕</button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // Toggle add-photo form
+  document.getElementById('toggle-add-photo').addEventListener('click', () => {
+    document.getElementById('add-photo-form').classList.toggle('open');
+  });
+  document.getElementById('cancel-photo-btn').addEventListener('click', () => {
+    document.getElementById('add-photo-form').classList.remove('open');
+    clearPhotoForm();
+  });
+
+  // Save photo
+  document.getElementById('save-photo-btn').addEventListener('click', () => {
+    const cap    = document.getElementById('ph-cap').value.trim();
+    const author = document.getElementById('ph-author').value.trim();
+    if (!cap || !author) { toast('Caption and name are required'); return; }
+
+    const photo = {
+      id:     genId(),
+      url:    document.getElementById('ph-url').value.trim(),
+      emoji:  EMOJIS[Math.floor(Math.random() * EMOJIS.length)],
+      caption: cap,
+      author,
+      car:    document.getElementById('ph-car').value.trim() || 'Unknown',
+      date:   new Date().toISOString().split('T')[0],
+      wide:   false
+    };
+
+    const photos = lsGet(LS.photos);
+    photos.unshift(photo); // newest first
+    lsSet(LS.photos, photos);
+    clearPhotoForm();
+    document.getElementById('add-photo-form').classList.remove('open');
+    renderPhotos();
+    toast('Photo dropped 📸');
+  });
+
+  function clearPhotoForm() {
+    ['ph-url','ph-cap','ph-author','ph-car'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+  }
+
+  function deletePhoto(id) {
+    if (!confirm('Delete this photo?')) return;
+    lsSet(LS.photos, lsGet(LS.photos).filter(p => p.id !== id));
+    renderPhotos();
+    toast('Photo removed');
+  }
+  window.deletePhoto = deletePhoto;
+
+
+  // ==============================================================
+  // 9. ANNOUNCEMENTS
+  // ==============================================================
+
+  function renderAnnouncements() {
+    const anns = lsGet(LS.announcements);
+    const el = document.getElementById('ann-list');
+
+    if (!anns.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📢</div><div class="empty-title">No Announcements</div><div class="empty-sub">Post one for the crew</div></div>`;
+      return;
+    }
+
+    const labels = { info: 'Info', warning: 'Heads Up', alert: 'Alert' };
+
+    el.innerHTML = anns.map(a => `
+      <div class="ann-card">
+        <div class="ann-stripe ${esc(a.type)}"></div>
+        <div class="ann-bdy">
+          <div class="ann-top">
+            <span class="ann-tag ${esc(a.type)}">${labels[a.type] || 'Info'}</span>
+            <span class="ann-date">${fmtDate(a.date)}</span>
+          </div>
+          <div class="ann-title">${esc(a.title)}</div>
+          <div class="ann-txt">${esc(a.text)}</div>
+        </div>
+        <div class="ann-ftr">
+          <span>Posted by <strong>${esc(a.author)}</strong></span>
+          <button class="ann-ftr-del" onclick="deleteAnn('${a.id}')">🗑 Remove</button>
+        </div>
+      </div>`).join('');
+  }
+
+  // Toggle add-announcement form
+  document.getElementById('toggle-add-ann').addEventListener('click', () => {
+    document.getElementById('add-ann-form').classList.toggle('open');
+  });
+  document.getElementById('cancel-ann-btn').addEventListener('click', () => {
+    document.getElementById('add-ann-form').classList.remove('open');
+    clearAnnForm();
+  });
+
+  // Save announcement
+  document.getElementById('save-ann-btn').addEventListener('click', () => {
+    const title = document.getElementById('ann-title').value.trim();
+    const text  = document.getElementById('ann-text').value.trim();
+    if (!title || !text) { toast('Title and message are required'); return; }
+
+    const ann = {
+      id:     genId(),
+      title,
+      text,
+      type:   document.getElementById('ann-type').value,
+      author: document.getElementById('ann-author').value.trim() || 'Admin',
+      date:   new Date().toISOString().split('T')[0]
+    };
+
+    const anns = lsGet(LS.announcements);
+    anns.unshift(ann);
+    lsSet(LS.announcements, anns);
+    clearAnnForm();
+    document.getElementById('add-ann-form').classList.remove('open');
+    renderAnnouncements();
+    toast('Announcement posted 📢');
+  });
+
+  function clearAnnForm() {
+    ['ann-title','ann-text','ann-author'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('ann-type').selectedIndex = 0;
+  }
+
+  function deleteAnn(id) {
+    if (!confirm('Delete this announcement?')) return;
+    lsSet(LS.announcements, lsGet(LS.announcements).filter(a => a.id !== id));
+    renderAnnouncements();
+    toast('Announcement removed');
+  }
+  window.deleteAnn = deleteAnn;
+
+
+  // ==============================================================
+  // 10. UTILITIES
+  // ==============================================================
+
+  // Toast notification
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  // HTML escape (prevent XSS from user-entered data)
+  function esc(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#039;');
+  }
+
+  // Format YYYY-MM-DD → "Nov 8"
+  function fmtDate(s) {
+    if (!s) return '';
+    const d = new Date(s + 'T12:00:00'); // noon prevents timezone off-by-one
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  // Format HH:MM → "9:00 PM"
+  function fmtTime(s) {
+    if (!s) return '';
+    const [h, m] = s.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${ampm}`;
+  }
+
+  // Name → initials (e.g. "Jake Torres" → "JT")
+  function initials(name) {
+    return (name || '').split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
+  }
+
+
+  // ==============================================================
+  // 11. INIT
+  // ==============================================================
+  seedIfNeeded(); // load demo data on first visit
+  renderHome();   // render initial tab
+
+  </script>
+</body>
+</html>
