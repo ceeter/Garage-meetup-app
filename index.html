@@ -92,7 +92,7 @@
       -webkit-backdrop-filter: blur(24px);
       border-bottom: 1px solid var(--border);
     }
-    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .logo-icon {
       width: 32px; height: 32px;
       background: var(--accent);
@@ -106,17 +106,22 @@
       font-family: var(--f-display);
       font-size: 1.2rem; font-weight: 700;
       letter-spacing: 0.05em; text-transform: uppercase;
+      white-space: nowrap;
     }
     .logo-text em { color: var(--accent); font-style: normal; }
-    .header-pill {
+    .account-trigger {
+      max-width: 42vw;
       background: var(--accent-lo);
       border: 1px solid var(--accent-border);
       color: var(--accent);
       font-family: var(--f-display);
       font-size: 0.65rem; font-weight: 700;
-      letter-spacing: 0.1em; text-transform: uppercase;
-      padding: 3px 10px; border-radius: 99px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 6px 10px; border-radius: 99px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex-shrink: 0;
     }
+    .account-trigger.signed-in { color: var(--green); border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.1); }
 
     /* ============================================================
        MAIN SCROLL AREA
@@ -285,18 +290,28 @@
     .form-status.loading { color: var(--amber); }
 
     /* ============================================================
-       AUTH PANEL
+       AUTH MENU / MODAL
        ============================================================ */
     .auth-panel {
-      padding: 14px 16px 0;
-      max-width: 780px;
-      margin: 0 auto;
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      display: none;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: calc(64px + env(safe-area-inset-top, 0px)) 12px calc(var(--safe-bot) + 12px);
+      background: rgba(0,0,0,0.45);
     }
+    .auth-panel.open { display: flex; }
     .auth-card {
+      width: min(360px, 100%);
+      max-height: min(560px, calc(100dvh - 88px - var(--safe-bot)));
+      overflow-y: auto;
       background: var(--bg-card);
-      border: 1px solid var(--border);
+      border: 1px solid var(--border2);
       border-radius: var(--r);
       padding: 14px;
+      box-shadow: 0 18px 48px rgba(0,0,0,0.55);
     }
     .auth-top {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
@@ -308,14 +323,24 @@
       text-transform: uppercase; letter-spacing: 0.06em;
     }
     .auth-sub { font-size: 0.78rem; color: var(--text-2); margin-top: 2px; }
+    .auth-close {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 1px solid var(--border); color: var(--text-2);
+      font-size: 1.1rem; line-height: 1;
+      flex-shrink: 0;
+    }
+    .auth-close:hover { color: var(--text); border-color: var(--border2); }
     .auth-user {
       color: var(--accent);
       font-size: 0.78rem; font-weight: 600;
-      text-align: right; word-break: break-word;
-      max-width: 45%;
+      overflow-wrap: anywhere;
     }
+    .auth-signedin { display: none; margin-bottom: 10px; }
+    .auth-panel.signed-in .auth-signedin { display: block; }
+    .auth-panel.signed-in .auth-fields, .auth-panel.signed-in #auth-signup-btn, .auth-panel.signed-in #auth-signin-btn, .auth-panel:not(.signed-in) #auth-signout-btn { display: none; }
     .auth-fields { display: grid; gap: 10px; }
-    .auth-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .auth-panel.signed-in .auth-actions { grid-template-columns: 1fr; }
     .auth-note {
       margin-top: 10px;
       font-size: 0.78rem;
@@ -343,9 +368,15 @@
     }
     .auth-required-note.show { display: block; }
     @media (min-width: 600px) {
-      .auth-panel { padding: 18px 22px 0; }
-      .auth-fields { grid-template-columns: 1fr 1fr; }
+      .auth-panel { padding: calc(66px + env(safe-area-inset-top, 0px)) 22px calc(var(--safe-bot) + 18px); }
       .auth-actions { display: flex; }
+    }
+    @media (max-width: 380px) {
+      .app-header { padding: 0 12px; }
+      .logo { gap: 8px; }
+      .logo-icon { width: 30px; height: 30px; }
+      .logo-text { font-size: 1.05rem; }
+      .account-trigger { max-width: 38vw; padding-inline: 8px; }
     }
 
     /* ============================================================
@@ -826,7 +857,7 @@
       <!-- RENAME: change "Garage" and "Circle" here -->
       <div class="logo-text">Garage <em>Circle</em></div>
     </div>
-    <div class="header-pill">Members Only</div>
+    <button class="account-trigger" id="account-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">Members Only</button>
   </header>
 
   <!-- Toast notification (auto-show/hide) -->
@@ -837,13 +868,17 @@
        ============================================================ -->
   <main class="main">
 
-    <div class="auth-panel" aria-label="Account sign in">
+    <div class="auth-panel" id="auth-panel" aria-label="Account sign in" role="dialog" aria-modal="true">
       <div class="auth-card">
         <div class="auth-top">
           <div>
-            <div class="auth-title">Account Access</div>
-            <div class="auth-sub">Sign in to create or edit your garage profile.</div>
+            <div class="auth-title">Account</div>
+            <div class="auth-sub" id="auth-subtitle">Sign in to create or edit your garage profile.</div>
           </div>
+          <button class="auth-close" id="auth-close" type="button" aria-label="Close account menu">×</button>
+        </div>
+        <div class="auth-signedin">
+          <div class="form-lbl">Signed in as</div>
           <div class="auth-user" id="auth-user-email">Signed out</div>
         </div>
         <div class="auth-fields">
@@ -922,7 +957,7 @@
         <button class="btn-add" id="toggle-add-member" title="Add Member" aria-label="Add Member">+</button>
       </div>
 
-      <div class="auth-required-note" id="garage-auth-note">Sign in above to create or edit your own garage profile. Public profiles remain visible.</div>
+      <div class="auth-required-note" id="garage-auth-note">Use the header account button to sign in and create or edit your own garage profile. Public profiles remain visible.</div>
 
       <!-- Add/Edit Member inline form -->
       <div class="inline-form" id="add-member-form">
@@ -1541,10 +1576,44 @@
     return appData.currentUser && appData.currentUser.email;
   }
 
+  let authStatusTimer = null;
+
   function setAuthStatus(type, msg) {
     const el = document.getElementById('auth-status');
+    if (!el) return;
+    if (authStatusTimer) clearTimeout(authStatusTimer);
     el.textContent = msg;
     el.className = `auth-status${msg ? ' show' : ''}${type ? ' ' + type : ''}`;
+    if (type === 'success' && msg) {
+      authStatusTimer = setTimeout(() => {
+        el.textContent = '';
+        el.className = 'auth-status';
+      }, 2600);
+    }
+  }
+
+  function openAuthPanel() {
+    const panel = document.getElementById('auth-panel');
+    const trigger = document.getElementById('account-trigger');
+    panel.classList.add('open');
+    trigger.setAttribute('aria-expanded', 'true');
+    const firstInput = document.getElementById('auth-email');
+    const signOutBtn = document.getElementById('auth-signout-btn');
+    setTimeout(() => (currentUserId() ? signOutBtn : firstInput).focus(), 0);
+  }
+
+  function closeAuthPanel() {
+    const panel = document.getElementById('auth-panel');
+    const trigger = document.getElementById('account-trigger');
+    panel.classList.remove('open');
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function compactEmail(email) {
+    if (!email) return 'Account';
+    const [name, domain] = email.split('@');
+    if (!domain) return email.length > 18 ? `${email.slice(0, 17)}…` : email;
+    return `${name.slice(0, 10)}${name.length > 10 ? '…' : ''}@${domain.split('.')[0]}`;
   }
 
   function setAuthLoading(isLoading) {
@@ -1556,13 +1625,26 @@
 
   function updateAuthUI() {
     const signedIn = !!currentUserId();
+    const email = currentUserEmail() || '';
+    const panel = document.getElementById('auth-panel');
+    const trigger = document.getElementById('account-trigger');
+    const subtitle = document.getElementById('auth-subtitle');
     const emailEl = document.getElementById('auth-user-email');
     const signOutBtn = document.getElementById('auth-signout-btn');
+    const signInBtn = document.getElementById('auth-signin-btn');
+    const signUpBtn = document.getElementById('auth-signup-btn');
     const addMemberBtn = document.getElementById('toggle-add-member');
     const garageNote = document.getElementById('garage-auth-note');
 
-    emailEl.textContent = signedIn ? currentUserEmail() : 'Signed out';
+    panel.classList.toggle('signed-in', signedIn);
+    trigger.classList.toggle('signed-in', signedIn);
+    trigger.textContent = signedIn ? compactEmail(email) : 'Members Only';
+    trigger.title = signedIn ? email : 'Sign in';
+    subtitle.textContent = signedIn ? 'Manage your signed-in account.' : 'Sign in to create or edit your garage profile.';
+    emailEl.textContent = signedIn ? email : 'Signed out';
     signOutBtn.disabled = !signedIn;
+    signInBtn.disabled = signedIn;
+    signUpBtn.disabled = signedIn;
     addMemberBtn.disabled = !signedIn;
     addMemberBtn.title = signedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
@@ -1606,6 +1688,7 @@
         renderHome();
         renderActiveTab();
         setAuthStatus('success', message);
+        if (currentUserId()) closeAuthPanel();
         console.log('refresh completed');
       } catch (err) {
         console.error('refresh failed', err);
@@ -1687,6 +1770,15 @@
   }
 
   function wireAuth() {
+    const panel = document.getElementById('auth-panel');
+    document.getElementById('account-trigger').addEventListener('click', openAuthPanel);
+    document.getElementById('auth-close').addEventListener('click', closeAuthPanel);
+    panel.addEventListener('click', (event) => {
+      if (event.target === panel) closeAuthPanel();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && panel.classList.contains('open')) closeAuthPanel();
+    });
     document.getElementById('auth-signup-btn').addEventListener('click', signUp);
     document.getElementById('auth-signin-btn').addEventListener('click', signIn);
     document.getElementById('auth-signout-btn').addEventListener('click', signOut);
