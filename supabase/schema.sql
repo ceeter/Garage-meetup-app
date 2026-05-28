@@ -61,19 +61,20 @@ alter table public.meets enable row level security;
 alter table public.photo_drops enable row level security;
 alter table public.announcements enable row level security;
 
--- Garage profile policy: authenticated users can read the garage list,
+-- Garage profile policy: anyone with the app link can read the garage list,
 -- but each profile row can only be inserted, updated, or deleted by its owner.
 drop policy if exists "anon can read members" on public.members;
 drop policy if exists "anon can insert members" on public.members;
 drop policy if exists "anon can update members" on public.members;
 drop policy if exists "anon can delete members" on public.members;
 drop policy if exists "authenticated can read members" on public.members;
+drop policy if exists "anon and authenticated can read members" on public.members;
 drop policy if exists "users can insert own member profile" on public.members;
 drop policy if exists "users can update own member profile" on public.members;
 drop policy if exists "users can delete own member profile" on public.members;
 
-create policy "authenticated can read members" on public.members
-  for select to authenticated using (true);
+create policy "anon and authenticated can read members" on public.members
+  for select to anon, authenticated using (true);
 create policy "users can insert own member profile" on public.members
   for insert to authenticated with check (auth.uid() = user_id);
 create policy "users can update own member profile" on public.members
