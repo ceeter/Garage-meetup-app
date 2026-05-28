@@ -1434,8 +1434,13 @@
     photos: [],
     announcements: [],
     checkins: [],
-    currentUser: null
+    currentUser: null,
+    currentSession: null
   };
+
+  let authStateUnsubscribe = null;
+  let lastHandledAuthKey = '';
+  let authRefreshPromise = null;
 
   function lsGet(key) {
     try { return JSON.parse(localStorage.getItem(key)) || []; }
@@ -1479,14 +1484,48 @@
     return DB[kind] && DB[kind].toDb ? DB[kind].toDb(clean) : clean;
   }
 
+  async function loadCurrentSession() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      appData.currentSession = null;
+      console.log('session loaded', null);
+      return null;
+    }
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) {
+      appData.currentSession = null;
+      console.error('refresh failed', error);
+      throw error;
+    }
+
+    appData.currentSession = data.session || null;
+    console.log('session loaded', appData.currentSession ? appData.currentSession.user.id : null);
+    return appData.currentSession;
+  }
+
   async function loadCurrentUser() {
-    if (!isSupabaseReady() || !supabaseClient.auth) return null;
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      appData.currentUser = null;
+      console.log('current user loaded', null);
+      return null;
+    }
+
+    if (!appData.currentSession) await loadCurrentSession();
+    if (!appData.currentSession) {
+      appData.currentUser = null;
+      console.log('current user loaded', null);
+      return null;
+    }
+
     const { data, error } = await supabaseClient.auth.getUser();
     if (error) {
       appData.currentUser = null;
-      return null;
+      console.error('refresh failed', error);
+      throw error;
     }
+
     appData.currentUser = data.user || null;
+    console.log('current user loaded', appData.currentUser ? appData.currentUser.id : null);
     return appData.currentUser;
   }
 
@@ -1550,13 +1589,32 @@
   }
 
   async function refreshAfterAuthChange(message) {
-    setAuthStatus('loading', 'Refreshing account and garage data...');
-    await loadCurrentUser();
-    await loadAllData(false);
-    updateAuthUI();
-    renderHome();
-    renderActiveTab();
-    setAuthStatus('success', message);
+    if (authRefreshPromise) return authRefreshPromise;
+
+    authRefreshPromise = (async () => {
+      setAuthLoading(true);
+      setAuthStatus('loading', 'Refreshing account and garage data...');
+      try {
+        await loadCurrentSession();
+        await loadCurrentUser();
+        await loadAllData(false, true);
+        updateAuthUI();
+        renderHome();
+        renderActiveTab();
+        setAuthStatus('success', message);
+        console.log('refresh completed');
+      } catch (err) {
+        console.error('refresh failed', err);
+        setAuthStatus('error', `Refresh failed: ${err.message}`);
+        toast(`Refresh failed: ${err.message}`);
+      } finally {
+        setAuthLoading(false);
+        updateAuthUI();
+        authRefreshPromise = null;
+      }
+    })();
+
+    return authRefreshPromise;
   }
 
   function authCredentials() {
@@ -1597,7 +1655,6 @@
       const { email, password } = authCredentials();
       const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      await refreshAfterAuthChange('Signed in successfully.');
       document.getElementById('auth-password').value = '';
     } catch (err) {
       setAuthStatus('error', err.message);
@@ -1617,7 +1674,6 @@
       setAuthStatus('loading', 'Signing you out...');
       const { error } = await supabaseClient.auth.signOut();
       if (error) throw error;
-      await refreshAfterAuthChange('Signed out successfully. Public garage list is still visible.');
     } catch (err) {
       setAuthStatus('error', err.message);
     } finally {
@@ -1630,16 +1686,33 @@
     document.getElementById('auth-signup-btn').addEventListener('click', signUp);
     document.getElementById('auth-signin-btn').addEventListener('click', signIn);
     document.getElementById('auth-signout-btn').addEventListener('click', signOut);
-    if (isSupabaseReady() && supabaseClient.auth) {
-      supabaseClient.auth.onAuthStateChange(async (event) => {
-        const msg = event === 'SIGNED_OUT'
-          ? 'Signed out successfully. Public garage list is still visible.'
-          : 'Auth state updated. Garage controls refreshed.';
-        await refreshAfterAuthChange(msg);
-      });
-    } else {
+  }
+
+  function attachAuthStateListener() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
       setAuthStatus('error', 'Supabase Auth is not configured. Garage profile changes are disabled.');
+      return;
     }
+    if (authStateUnsubscribe) return;
+
+    const { data } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      console.log('auth state changed', event, session && session.user ? session.user.id : null);
+      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return;
+      if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT') return;
+      if (event === 'SIGNED_IN' && session && session.user && session.user.id === currentUserId()) return;
+      if (event === 'SIGNED_OUT' && !currentUserId()) return;
+
+      const authKey = `${event}:${session && session.user ? session.user.id : 'signed-out'}`;
+      if (authKey === lastHandledAuthKey) return;
+      lastHandledAuthKey = authKey;
+
+      appData.currentSession = session || null;
+      const msg = event === 'SIGNED_OUT'
+        ? 'Signed out successfully. Public garage list is still visible.'
+        : 'Signed in successfully. Garage controls refreshed.';
+      await refreshAfterAuthChange(msg);
+    });
+    authStateUnsubscribe = data && data.subscription;
   }
 
   function myMemberProfile() {
@@ -1648,7 +1721,7 @@
     return appData.members.find(m => m.user_id === uid) || null;
   }
 
-  async function loadKind(kind, showError = true) {
+  async function loadKind(kind, showError = true, throwOnError = false) {
     if (!isSupabaseReady()) {
       appData[kind] = lsGet(localKey(kind));
       return appData[kind];
@@ -1662,8 +1735,10 @@
       .order(cfg.order, { ascending });
 
     if (error) {
+      console.error(`Could not load ${kind}`, error);
       if (showError) toast(`Could not load ${kind}: ${error.message}`);
       appData[kind] = [];
+      if (throwOnError) throw new Error(`Could not load ${kind}: ${error.message}`);
       return [];
     }
 
@@ -1671,10 +1746,18 @@
     return appData[kind];
   }
 
-  async function loadAllData(showToast = true) {
+  async function loadAllData(showToast = true, throwOnError = false) {
     if (!isSupabaseReady()) seedIfNeeded();
-    await Promise.all(['members','meets','photos','announcements'].map(k => loadKind(k, true)));
+
+    const kinds = ['members','meets','photos','announcements'];
+    const results = await Promise.allSettled(kinds.map(kind => loadKind(kind, showToast, throwOnError)));
     appData.checkins = lsGet(LS.checkins);
+
+    if (isSupabaseReady()) console.log('public garage data loaded');
+
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed && throwOnError) throw failed.reason;
+
     if (!showToast) return;
     if (isSupabaseReady()) toast('Shared Supabase data loaded');
     else toast('Add Supabase config to enable shared data');
@@ -2474,14 +2557,28 @@
   // 11. INIT
   // ==============================================================
   (async function init() {
+    console.log('app init started');
     wireAuth();
     setAuthStatus('loading', 'Checking signed-in user...');
-    await loadCurrentUser();
-    updateAuthUI();
-    setAuthStatus(currentUserId() ? 'success' : '', currentUserId() ? 'Signed in.' : 'Sign in to manage your garage profile.');
-    await loadAllData();
-    updateAuthUI();
-    renderHome();
+    try {
+      await loadCurrentSession();
+      await loadCurrentUser();
+      await loadAllData(true, true);
+      updateAuthUI();
+      renderHome();
+      renderActiveTab();
+      setAuthStatus(currentUserId() ? 'success' : '', currentUserId() ? 'Signed in.' : 'Sign in to manage your garage profile.');
+    } catch (err) {
+      console.error('refresh failed', err);
+      updateAuthUI();
+      renderHome();
+      renderActiveTab();
+      setAuthStatus('error', `Refresh failed: ${err.message}`);
+      toast(`Refresh failed: ${err.message}`);
+    } finally {
+      setAuthLoading(false);
+      attachAuthStateListener();
+    }
   })();
 
   </script>
