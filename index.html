@@ -262,6 +262,9 @@
       transition: background 0.15s, box-shadow 0.15s;
     }
     .btn-primary:hover { background: var(--accent-hi); box-shadow: 0 0 22px var(--accent-glow); }
+    .btn-primary:disabled, .btn-cancel:disabled, .btn-del:disabled, .btn-ghost:disabled {
+      opacity: 0.58; cursor: not-allowed; box-shadow: none;
+    }
     .btn-cancel {
       background: transparent;
       border: 1px solid var(--border); color: var(--text-2);
@@ -272,6 +275,14 @@
       transition: border-color 0.15s, color 0.15s;
     }
     .btn-cancel:hover { border-color: var(--border2); color: var(--text); }
+    .form-status {
+      display: none; margin-top: 12px; font-size: 0.82rem;
+      color: var(--text-2); line-height: 1.45;
+    }
+    .form-status.show { display: block; }
+    .form-status.success { color: var(--green); }
+    .form-status.error { color: var(--red); }
+    .form-status.loading { color: var(--amber); }
 
     /* ============================================================
        SHARED: EMPTY STATES
@@ -818,9 +829,9 @@
         <button class="btn-add" id="toggle-add-member" title="Add Member" aria-label="Add Member">+</button>
       </div>
 
-      <!-- Add Member inline form -->
+      <!-- Add/Edit Member inline form -->
       <div class="inline-form" id="add-member-form">
-        <div class="form-title">Add Member</div>
+        <div class="form-title" id="member-form-title">Create Garage Profile</div>
         <div class="form-grid">
           <div class="form-grp">
             <label class="form-lbl">Name *</label>
@@ -856,9 +867,10 @@
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn-primary" id="save-member-btn">Save Member</button>
+          <button class="btn-primary" id="save-member-btn">Save Profile</button>
           <button class="btn-cancel"  id="cancel-member-btn">Cancel</button>
         </div>
+        <div class="form-status" id="member-form-status" role="status" aria-live="polite"></div>
       </div>
 
       <!-- Members list — populated by JS -->
@@ -1298,7 +1310,14 @@
   };
 
   const DB = {
-    members: { table: 'members', order: 'created_at' },
+    members: {
+      table: 'members', order: 'created_at',
+      toDb: m => ({
+        id: m.id, user_id: m.user_id || null, name: m.name,
+        year: m.year || '', make: m.make, model: m.model,
+        mods: m.mods || '', ig: m.ig || '', tt: m.tt || ''
+      })
+    },
     meets: {
       table: 'meets', order: 'date',
       toDb: m => ({
@@ -1319,7 +1338,8 @@
     meets: [],
     photos: [],
     announcements: [],
-    checkins: []
+    checkins: [],
+    currentUser: null
   };
 
   function lsGet(key) {
@@ -1362,6 +1382,27 @@
     const clean = { ...row };
     if (String(clean.id || '').startsWith('_')) delete clean.id;
     return DB[kind] && DB[kind].toDb ? DB[kind].toDb(clean) : clean;
+  }
+
+  async function loadCurrentUser() {
+    if (!isSupabaseReady() || !supabaseClient.auth) return null;
+    const { data, error } = await supabaseClient.auth.getUser();
+    if (error) {
+      appData.currentUser = null;
+      return null;
+    }
+    appData.currentUser = data.user || null;
+    return appData.currentUser;
+  }
+
+  function currentUserId() {
+    return appData.currentUser && appData.currentUser.id;
+  }
+
+  function myMemberProfile() {
+    const uid = currentUserId();
+    if (!uid) return null;
+    return appData.members.find(m => m.user_id === uid) || null;
   }
 
   async function loadKind(kind, showError = true) {
@@ -1424,10 +1465,14 @@
       return arr[idx];
     }
 
-    const { error } = await supabaseClient
+    let query = supabaseClient
       .from(DB[kind].table)
       .update(toDb(kind, patch))
       .eq('id', id);
+
+    if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
+
+    const { error } = await query;
 
     if (error) throw error;
   }
@@ -1440,7 +1485,9 @@
       return;
     }
 
-    const { error } = await supabaseClient.from(DB[kind].table).delete().eq('id', id);
+    let query = supabaseClient.from(DB[kind].table).delete().eq('id', id);
+    if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
+    const { error } = await query;
     if (error) throw error;
   }
 
@@ -1544,6 +1591,7 @@
   function renderMembers() {
     const members = appData.members;
     const el = document.getElementById('members-list');
+    const uid = currentUserId();
 
     if (!members.length) {
       el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-title">No Members Yet</div><div class="empty-sub">Tap + to add your first member</div></div>`;
@@ -1567,57 +1615,151 @@
             ${m.tt ? `<div class="handle-tag">TT ${esc(m.tt)}</div>`  : ''}
           </div>` : ''}
         </div>
-        <div class="member-ftr">
+        ${uid && m.user_id === uid ? `<div class="member-ftr">
+          <button class="btn-ghost" onclick="editMember('${m.id}')">✎ Edit</button>
           <button class="btn-del" onclick="deleteMember('${m.id}')">🗑 Remove</button>
-        </div>
+        </div>` : ''}
       </div>`).join('');
   }
 
-  // Toggle add-member form
-  document.getElementById('toggle-add-member').addEventListener('click', () => {
-    document.getElementById('add-member-form').classList.toggle('open');
+  let editingMemberId = null;
+
+  // Toggle add/edit-member form
+  document.getElementById('toggle-add-member').addEventListener('click', async () => {
+    const form = document.getElementById('add-member-form');
+    if (form.classList.contains('open')) {
+      form.classList.remove('open');
+      resetMemberForm();
+      return;
+    }
+
+    await openMyMemberForm();
   });
   document.getElementById('cancel-member-btn').addEventListener('click', () => {
     document.getElementById('add-member-form').classList.remove('open');
-    clearMemberForm();
+    resetMemberForm();
   });
+
+  async function openMyMemberForm() {
+    setMemberFormStatus('loading', 'Loading your garage profile...');
+    setMemberFormSaving(true);
+    document.getElementById('add-member-form').classList.add('open');
+
+    if (isSupabaseReady()) await loadCurrentUser();
+    if (isSupabaseReady() && !currentUserId()) {
+      setMemberFormSaving(false);
+      setMemberFormStatus('error', 'Please sign in before creating or editing your garage profile.');
+      return;
+    }
+
+    if (isSupabaseReady()) await loadKind('members', false);
+    const mine = myMemberProfile();
+    fillMemberForm(mine || {});
+    editingMemberId = mine ? mine.id : null;
+    document.getElementById('member-form-title').textContent = mine ? 'Edit Garage Profile' : 'Create Garage Profile';
+    document.getElementById('save-member-btn').textContent = mine ? 'Save Changes' : 'Save Profile';
+    setMemberFormSaving(false);
+    setMemberFormStatus('', '');
+    document.getElementById('add-member-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function editMember(id) {
+    const member = appData.members.find(m => m.id === id);
+    if (!member || member.user_id !== currentUserId()) {
+      toast('You can only edit your own garage profile');
+      return;
+    }
+    fillMemberForm(member);
+    editingMemberId = member.id;
+    document.getElementById('member-form-title').textContent = 'Edit Garage Profile';
+    document.getElementById('save-member-btn').textContent = 'Save Changes';
+    setMemberFormStatus('', '');
+    document.getElementById('add-member-form').classList.add('open');
+    document.getElementById('add-member-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  window.editMember = editMember;
 
   // Save member
   document.getElementById('save-member-btn').addEventListener('click', async () => {
     const name  = document.getElementById('m-name').value.trim();
     const make  = document.getElementById('m-make').value.trim();
     const model = document.getElementById('m-model').value.trim();
-    if (!name || !make || !model) { toast('Name, Make & Model are required'); return; }
+    if (!name || !make || !model) { setMemberFormStatus('error', 'Name, Make & Model are required'); return; }
 
-    const m = {
-      id: genId(),
-      name,
-      year:  document.getElementById('m-year').value.trim(),
-      make, model,
-      mods:  document.getElementById('m-mods').value.trim(),
-      ig:    document.getElementById('m-ig').value.trim(),
-      tt:    document.getElementById('m-tt').value.trim()
-    };
     try {
-      await addRecord('members', m);
+      setMemberFormSaving(true);
+      setMemberFormStatus('loading', editingMemberId ? 'Saving profile changes...' : 'Creating your garage profile...');
+      if (isSupabaseReady()) await loadCurrentUser();
+      if (isSupabaseReady() && !currentUserId()) throw new Error('Please sign in before saving your garage profile.');
+
+      const existing = isSupabaseReady() ? myMemberProfile() : (editingMemberId && appData.members.find(m => m.id === editingMemberId));
+      const m = {
+        name,
+        year:  document.getElementById('m-year').value.trim(),
+        make, model,
+        mods:  document.getElementById('m-mods').value.trim(),
+        ig:    document.getElementById('m-ig').value.trim(),
+        tt:    document.getElementById('m-tt').value.trim()
+      };
+      if (isSupabaseReady()) m.user_id = currentUserId();
+
+      if (existing) {
+        await updateRecord('members', existing.id, m);
+      } else {
+        await addRecord('members', { id: genId(), ...m });
+      }
+
       await loadKind('members');
-      clearMemberForm();
-      document.getElementById('add-member-form').classList.remove('open');
+      editingMemberId = myMemberProfile() ? myMemberProfile().id : null;
       renderMembers();
       renderHome();
-      toast('Member added 🚗');
+      setMemberFormStatus('success', 'Garage profile saved successfully.');
+      toast(existing ? 'Profile updated 🚗' : 'Profile created 🚗');
     } catch (err) {
-      toast(`Could not save member: ${err.message}`);
+      setMemberFormStatus('error', `Could not save profile: ${err.message}`);
+      toast(`Could not save profile: ${err.message}`);
+    } finally {
+      setMemberFormSaving(false);
     }
   });
 
-  function clearMemberForm() {
-    ['m-name','m-year','m-make','m-model','m-mods','m-ig','m-tt'].forEach(id => {
-      document.getElementById(id).value = '';
+  function fillMemberForm(member) {
+    document.getElementById('m-name').value = member.name || '';
+    document.getElementById('m-year').value = member.year || '';
+    document.getElementById('m-make').value = member.make || '';
+    document.getElementById('m-model').value = member.model || '';
+    document.getElementById('m-mods').value = member.mods || '';
+    document.getElementById('m-ig').value = member.ig || '';
+    document.getElementById('m-tt').value = member.tt || '';
+  }
+
+  function resetMemberForm() {
+    editingMemberId = null;
+    fillMemberForm({});
+    document.getElementById('member-form-title').textContent = 'Create Garage Profile';
+    document.getElementById('save-member-btn').textContent = 'Save Profile';
+    setMemberFormStatus('', '');
+    setMemberFormSaving(false);
+  }
+
+  function setMemberFormSaving(isSaving) {
+    ['save-member-btn','cancel-member-btn','toggle-add-member'].forEach(id => {
+      document.getElementById(id).disabled = isSaving;
     });
   }
 
+  function setMemberFormStatus(type, msg) {
+    const el = document.getElementById('member-form-status');
+    el.textContent = msg;
+    el.className = `form-status${msg ? ' show' : ''}${type ? ' ' + type : ''}`;
+  }
+
   async function deleteMember(id) {
+    const member = appData.members.find(m => m.id === id);
+    if (isSupabaseReady() && (!member || member.user_id !== currentUserId())) {
+      toast('You can only remove your own garage profile');
+      return;
+    }
     if (!confirm('Remove this member from the garage?')) return;
     try {
       await deleteRecord('members', id);
@@ -2086,6 +2228,7 @@
   // 11. INIT
   // ==============================================================
   (async function init() {
+    await loadCurrentUser();
     await loadAllData();
     renderHome();
   })();
