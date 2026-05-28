@@ -1140,6 +1140,7 @@
   <!-- ============================================================
        JAVASCRIPT
        ============================================================ -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
   /*
   ================================================================
@@ -1147,8 +1148,8 @@
   ================================================================
 
     SECTIONS:
-      1. Seed / Default Data
-      2. localStorage Helpers
+      1. Supabase Config + Default Data
+      2. Data Helpers
       3. Tab Navigation
       4. Home Dashboard
       5. Members / Garage
@@ -1160,52 +1161,33 @@
       11. Init
 
   ================================================================
-    FUTURE BACKEND — WHERE TO CONNECT SUPABASE
+    SUPABASE BACKEND
   ================================================================
 
-    1. AUTHENTICATION
-       Install: npm install @supabase/supabase-js
-       Replace seedIfNeeded() + all lsGet/lsSet calls with:
-         const { data: { user } } = await supabase.auth.getUser()
-       Use email magic-link for invite-only access.
+    Configure SUPABASE_CONFIG below, then run supabase/schema.sql in
+    your Supabase SQL editor to create the shared MVP tables.
 
-    2. DATABASE (replace localStorage)
-       Read:   const { data } = await supabase.from('meets').select('*')
-       Write:  const { error } = await supabase.from('meets').insert([{...}])
-       Delete: await supabase.from('meets').delete().eq('id', id)
-
-    3. PHOTO STORAGE (replace URL input)
-       const { data } = await supabase.storage.from('drops').upload(path, file)
-       const url = supabase.storage.from('drops').getPublicUrl(path).data.publicUrl
-
-    4. REALTIME CHECK-INS (live map pins)
-       const ch = supabase.channel('checkins')
-       ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checkins' }, handler)
-       ch.subscribe()
-
-    5. CRUISE MODE GPS (live location sharing)
-       const watchId = navigator.geolocation.watchPosition(pos => {
-         supabase.channel('cruise').send({ type: 'broadcast', event: 'location',
-           payload: { lat: pos.coords.latitude, lng: pos.coords.longitude }
-         })
-       })
-       // Stop: navigator.geolocation.clearWatch(watchId)
-
-    6. MAP INTEGRATION
-       Replace .map-grid div with: <div id="map" style="height:260px"></div>
-       Then: mapboxgl.accessToken = 'YOUR_TOKEN'
-             const map = new mapboxgl.Map({ container: 'map', style: '...' })
-             // Add member markers from Supabase Realtime channel
+    FUTURE: Add authentication, Supabase Storage uploads, live check-ins,
+    and map pins after the private friend-group MVP is stable.
 
   ================================================================
   */
 
 
   // ==============================================================
-  // 1. SEED / DEFAULT DATA
-  //    Runs once on first load. After that, localStorage is used.
-  //    Edit these objects to change the demo content.
+  // 1. SUPABASE CONFIG + DEFAULT DATA
+  //    Add your Supabase Project URL and anon key here.
+  //    If left blank, the app falls back to this browser's localStorage.
   // ==============================================================
+
+  const SUPABASE_CONFIG = {
+    url: '',
+    anonKey: ''
+  };
+
+  const supabaseClient = (SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey && window.supabase)
+    ? window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
+    : null;
 
   // Helper: date string N days from today
   function futureDate(n) {
@@ -1303,8 +1285,7 @@
 
 
   // ==============================================================
-  // 2. LOCALSTORAGE HELPERS
-  //    FUTURE: swap lsGet / lsSet for Supabase calls
+  // 2. DATA HELPERS
   // ==============================================================
 
   const LS = {
@@ -1316,6 +1297,31 @@
     seeded:        'gc_seeded'
   };
 
+  const DB = {
+    members: { table: 'members', order: 'created_at' },
+    meets: {
+      table: 'meets', order: 'date',
+      toDb: m => ({
+        id: m.id, title: m.title, date: m.date, time: m.time || null,
+        location: m.location, description: m.desc || '',
+        rsvp: m.rsvp || { going: 0, maybe: 0, cantgo: 0 },
+        my_rsvp: m.myRsvp || null,
+        checked_in: !!m.checkedIn
+      }),
+      fromDb: m => ({ ...m, desc: m.description || '', myRsvp: m.my_rsvp || null, checkedIn: !!m.checked_in, rsvp: m.rsvp || { going: 0, maybe: 0, cantgo: 0 } })
+    },
+    photos: { table: 'photo_drops', order: 'created_at' },
+    announcements: { table: 'announcements', order: 'created_at' }
+  };
+
+  const appData = {
+    members: [],
+    meets: [],
+    photos: [],
+    announcements: [],
+    checkins: []
+  };
+
   function lsGet(key) {
     try { return JSON.parse(localStorage.getItem(key)) || []; }
     catch { return []; }
@@ -1324,10 +1330,11 @@
     localStorage.setItem(key, JSON.stringify(val));
   }
   function genId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return '_' + Math.random().toString(36).substr(2, 9);
   }
 
-  // Seed once on first load
+  // Seed local fallback once on first load. Supabase starts empty unless you add data.
   function seedIfNeeded() {
     if (!localStorage.getItem(LS.seeded)) {
       lsSet(LS.members,       SEED.members);
@@ -1337,6 +1344,104 @@
       lsSet(LS.checkins,      SEED.checkins);
       localStorage.setItem(LS.seeded, '1');
     }
+  }
+
+  function isSupabaseReady() {
+    return !!supabaseClient;
+  }
+
+  function localKey(kind) {
+    return LS[kind];
+  }
+
+  function normalize(kind, row) {
+    return DB[kind] && DB[kind].fromDb ? DB[kind].fromDb(row) : row;
+  }
+
+  function toDb(kind, row) {
+    const clean = { ...row };
+    if (String(clean.id || '').startsWith('_')) delete clean.id;
+    return DB[kind] && DB[kind].toDb ? DB[kind].toDb(clean) : clean;
+  }
+
+  async function loadKind(kind, showError = true) {
+    if (!isSupabaseReady()) {
+      appData[kind] = lsGet(localKey(kind));
+      return appData[kind];
+    }
+
+    const cfg = DB[kind];
+    const ascending = kind === 'meets';
+    const { data, error } = await supabaseClient
+      .from(cfg.table)
+      .select('*')
+      .order(cfg.order, { ascending });
+
+    if (error) {
+      if (showError) toast(`Could not load ${kind}: ${error.message}`);
+      appData[kind] = [];
+      return [];
+    }
+
+    appData[kind] = (data || []).map(row => normalize(kind, row));
+    return appData[kind];
+  }
+
+  async function loadAllData() {
+    if (!isSupabaseReady()) seedIfNeeded();
+    await Promise.all(['members','meets','photos','announcements'].map(k => loadKind(k, true)));
+    appData.checkins = lsGet(LS.checkins);
+    if (isSupabaseReady()) toast('Shared Supabase data loaded');
+    else toast('Add Supabase config to enable shared data');
+  }
+
+  async function addRecord(kind, row) {
+    if (!isSupabaseReady()) {
+      const arr = lsGet(localKey(kind));
+      arr.unshift(row);
+      lsSet(localKey(kind), arr);
+      appData[kind] = arr;
+      return row;
+    }
+
+    const { data, error } = await supabaseClient
+      .from(DB[kind].table)
+      .insert([toDb(kind, row)])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return normalize(kind, data);
+  }
+
+  async function updateRecord(kind, id, patch) {
+    if (!isSupabaseReady()) {
+      const arr = lsGet(localKey(kind));
+      const idx = arr.findIndex(item => item.id === id);
+      if (idx > -1) arr[idx] = { ...arr[idx], ...patch };
+      lsSet(localKey(kind), arr);
+      appData[kind] = arr;
+      return arr[idx];
+    }
+
+    const { error } = await supabaseClient
+      .from(DB[kind].table)
+      .update(toDb(kind, patch))
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+
+  async function deleteRecord(kind, id) {
+    if (!isSupabaseReady()) {
+      const arr = lsGet(localKey(kind)).filter(item => item.id !== id);
+      lsSet(localKey(kind), arr);
+      appData[kind] = arr;
+      return;
+    }
+
+    const { error } = await supabaseClient.from(DB[kind].table).delete().eq('id', id);
+    if (error) throw error;
   }
 
 
@@ -1379,10 +1484,10 @@
   // ==============================================================
 
   function renderHome() {
-    const members      = lsGet(LS.members);
-    const meets        = lsGet(LS.meets);
-    const photos       = lsGet(LS.photos);
-    const announcements = lsGet(LS.announcements);
+    const members      = appData.members;
+    const meets        = appData.meets;
+    const photos       = appData.photos;
+    const announcements = appData.announcements;
 
     // Stats
     document.getElementById('stat-members').textContent = members.length;
@@ -1437,7 +1542,7 @@
   // ==============================================================
 
   function renderMembers() {
-    const members = lsGet(LS.members);
+    const members = appData.members;
     const el = document.getElementById('members-list');
 
     if (!members.length) {
@@ -1478,7 +1583,7 @@
   });
 
   // Save member
-  document.getElementById('save-member-btn').addEventListener('click', () => {
+  document.getElementById('save-member-btn').addEventListener('click', async () => {
     const name  = document.getElementById('m-name').value.trim();
     const make  = document.getElementById('m-make').value.trim();
     const model = document.getElementById('m-model').value.trim();
@@ -1493,13 +1598,17 @@
       ig:    document.getElementById('m-ig').value.trim(),
       tt:    document.getElementById('m-tt').value.trim()
     };
-    const arr = lsGet(LS.members);
-    arr.push(m);
-    lsSet(LS.members, arr);
-    clearMemberForm();
-    document.getElementById('add-member-form').classList.remove('open');
-    renderMembers();
-    toast('Member added 🚗');
+    try {
+      await addRecord('members', m);
+      await loadKind('members');
+      clearMemberForm();
+      document.getElementById('add-member-form').classList.remove('open');
+      renderMembers();
+      renderHome();
+      toast('Member added 🚗');
+    } catch (err) {
+      toast(`Could not save member: ${err.message}`);
+    }
   });
 
   function clearMemberForm() {
@@ -1508,11 +1617,17 @@
     });
   }
 
-  function deleteMember(id) {
+  async function deleteMember(id) {
     if (!confirm('Remove this member from the garage?')) return;
-    lsSet(LS.members, lsGet(LS.members).filter(m => m.id !== id));
-    renderMembers();
-    toast('Member removed');
+    try {
+      await deleteRecord('members', id);
+      await loadKind('members');
+      renderMembers();
+      renderHome();
+      toast('Member removed');
+    } catch (err) {
+      toast(`Could not remove member: ${err.message}`);
+    }
   }
   window.deleteMember = deleteMember;
 
@@ -1522,7 +1637,7 @@
   // ==============================================================
 
   function renderMeets() {
-    const meets = lsGet(LS.meets);
+    const meets = appData.meets;
     const el = document.getElementById('meets-list');
 
     if (!meets.length) {
@@ -1582,44 +1697,42 @@
   });
 
   // Save (create or update) meet
-  document.getElementById('save-meet-btn').addEventListener('click', () => {
+  document.getElementById('save-meet-btn').addEventListener('click', async () => {
     const title = document.getElementById('meet-name').value.trim();
     const date  = document.getElementById('meet-date').value;
     const loc   = document.getElementById('meet-loc').value.trim();
     if (!title || !date || !loc) { toast('Name, Date & Location are required'); return; }
 
-    const meets = lsGet(LS.meets);
+    const meets = appData.meets;
     const editId = document.getElementById('edit-meet-id').value;
 
-    if (editId) {
-      // Edit existing
-      const idx = meets.findIndex(m => m.id === editId);
-      if (idx > -1) {
-        meets[idx] = { ...meets[idx], title, date,
-          time: document.getElementById('meet-time').value,
-          location: loc,
-          desc: document.getElementById('meet-desc').value.trim()
-        };
-      }
-      toast('Meet updated ✓');
-    } else {
-      // New meet
-      meets.push({
-        id: genId(), title, date,
-        time:     document.getElementById('meet-time').value,
-        location: loc,
-        desc:     document.getElementById('meet-desc').value.trim(),
-        rsvp:     { going: 0, maybe: 0, cantgo: 0 },
-        myRsvp:   null,
-        checkedIn: false
-      });
-      toast('Meet added 🏁');
-    }
+    const meet = {
+      id: editId || genId(), title, date,
+      time:     document.getElementById('meet-time').value,
+      location: loc,
+      desc:     document.getElementById('meet-desc').value.trim(),
+      rsvp:     { going: 0, maybe: 0, cantgo: 0 },
+      myRsvp:   null,
+      checkedIn: false
+    };
 
-    lsSet(LS.meets, meets);
-    document.getElementById('add-meet-form').classList.remove('open');
-    clearMeetForm();
-    renderMeets();
+    try {
+      if (editId) {
+        const existing = meets.find(m => m.id === editId) || {};
+        await updateRecord('meets', editId, { ...existing, ...meet });
+        toast('Meet updated ✓');
+      } else {
+        await addRecord('meets', meet);
+        toast('Meet added 🏁');
+      }
+      await loadKind('meets');
+      document.getElementById('add-meet-form').classList.remove('open');
+      clearMeetForm();
+      renderMeets();
+      renderHome();
+    } catch (err) {
+      toast(`Could not save meet: ${err.message}`);
+    }
   });
 
   function clearMeetForm() {
@@ -1631,7 +1744,7 @@
 
   // Open form pre-filled for editing
   function editMeet(id) {
-    const m = lsGet(LS.meets).find(x => x.id === id);
+    const m = appData.meets.find(x => x.id === id);
     if (!m) return;
     document.getElementById('edit-meet-id').value    = id;
     document.getElementById('meet-form-ttl').textContent = 'Edit Meet';
@@ -1645,16 +1758,22 @@
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function deleteMeet(id) {
+  async function deleteMeet(id) {
     if (!confirm('Delete this meet?')) return;
-    lsSet(LS.meets, lsGet(LS.meets).filter(m => m.id !== id));
-    renderMeets();
-    toast('Meet deleted');
+    try {
+      await deleteRecord('meets', id);
+      await loadKind('meets');
+      renderMeets();
+      renderHome();
+      toast('Meet deleted');
+    } catch (err) {
+      toast(`Could not delete meet: ${err.message}`);
+    }
   }
 
   // RSVP toggle
-  function setRsvp(meetId, status) {
-    const meets = lsGet(LS.meets);
+  async function setRsvp(meetId, status) {
+    const meets = appData.meets;
     const m = meets.find(x => x.id === meetId);
     if (!m) return;
     // Undo previous
@@ -1662,7 +1781,7 @@
     // Toggle off if same
     if (m.myRsvp === status) { m.myRsvp = null; }
     else { m.myRsvp = status; m.rsvp[status]++; }
-    lsSet(LS.meets, meets);
+    try { await updateRecord('meets', meetId, m); } catch (err) { toast(`Could not save RSVP: ${err.message}`); }
     renderMeets();
     const msgs = { going: '✅ You\'re going!', maybe: '🤔 Marked as maybe', cantgo: '❌ Can\'t make it' };
     if (m.myRsvp) toast(msgs[m.myRsvp]);
@@ -1670,12 +1789,12 @@
 
   // Check-in toggle
   // FUTURE: log real check-in to Supabase with timestamp + GPS coordinates
-  function checkIn(meetId) {
-    const meets = lsGet(LS.meets);
+  async function checkIn(meetId) {
+    const meets = appData.meets;
     const m = meets.find(x => x.id === meetId);
     if (!m) return;
     m.checkedIn = !m.checkedIn;
-    lsSet(LS.meets, meets);
+    try { await updateRecord('meets', meetId, m); } catch (err) { toast(`Could not save check-in: ${err.message}`); }
     renderMeets();
     toast(m.checkedIn ? '📍 You\'re checked in!' : 'Check-in removed');
   }
@@ -1693,7 +1812,7 @@
   // ==============================================================
 
   function renderCheckins() {
-    const checkins = lsGet(LS.checkins);
+    const checkins = appData.checkins;
     const el = document.getElementById('checkin-list');
 
     if (!checkins.length) {
@@ -1739,7 +1858,7 @@
   const EMOJIS = ['🚗','🏎️','🔧','🌙','🏁','🔥','📸','⚡','🌃'];
 
   function renderPhotos() {
-    const photos = lsGet(LS.photos);
+    const photos = appData.photos;
     const grid = document.getElementById('photo-grid');
 
     if (!photos.length) {
@@ -1775,7 +1894,7 @@
   });
 
   // Save photo
-  document.getElementById('save-photo-btn').addEventListener('click', () => {
+  document.getElementById('save-photo-btn').addEventListener('click', async () => {
     const cap    = document.getElementById('ph-cap').value.trim();
     const author = document.getElementById('ph-author').value.trim();
     if (!cap || !author) { toast('Caption and name are required'); return; }
@@ -1791,13 +1910,17 @@
       wide:   false
     };
 
-    const photos = lsGet(LS.photos);
-    photos.unshift(photo); // newest first
-    lsSet(LS.photos, photos);
-    clearPhotoForm();
-    document.getElementById('add-photo-form').classList.remove('open');
-    renderPhotos();
-    toast('Photo dropped 📸');
+    try {
+      await addRecord('photos', photo);
+      await loadKind('photos');
+      clearPhotoForm();
+      document.getElementById('add-photo-form').classList.remove('open');
+      renderPhotos();
+      renderHome();
+      toast('Photo dropped 📸');
+    } catch (err) {
+      toast(`Could not save photo: ${err.message}`);
+    }
   });
 
   function clearPhotoForm() {
@@ -1806,11 +1929,17 @@
     });
   }
 
-  function deletePhoto(id) {
+  async function deletePhoto(id) {
     if (!confirm('Delete this photo?')) return;
-    lsSet(LS.photos, lsGet(LS.photos).filter(p => p.id !== id));
-    renderPhotos();
-    toast('Photo removed');
+    try {
+      await deleteRecord('photos', id);
+      await loadKind('photos');
+      renderPhotos();
+      renderHome();
+      toast('Photo removed');
+    } catch (err) {
+      toast(`Could not remove photo: ${err.message}`);
+    }
   }
   window.deletePhoto = deletePhoto;
 
@@ -1820,7 +1949,7 @@
   // ==============================================================
 
   function renderAnnouncements() {
-    const anns = lsGet(LS.announcements);
+    const anns = appData.announcements;
     const el = document.getElementById('ann-list');
 
     if (!anns.length) {
@@ -1858,7 +1987,7 @@
   });
 
   // Save announcement
-  document.getElementById('save-ann-btn').addEventListener('click', () => {
+  document.getElementById('save-ann-btn').addEventListener('click', async () => {
     const title = document.getElementById('ann-title').value.trim();
     const text  = document.getElementById('ann-text').value.trim();
     if (!title || !text) { toast('Title and message are required'); return; }
@@ -1872,13 +2001,17 @@
       date:   new Date().toISOString().split('T')[0]
     };
 
-    const anns = lsGet(LS.announcements);
-    anns.unshift(ann);
-    lsSet(LS.announcements, anns);
-    clearAnnForm();
-    document.getElementById('add-ann-form').classList.remove('open');
-    renderAnnouncements();
-    toast('Announcement posted 📢');
+    try {
+      await addRecord('announcements', ann);
+      await loadKind('announcements');
+      clearAnnForm();
+      document.getElementById('add-ann-form').classList.remove('open');
+      renderAnnouncements();
+      renderHome();
+      toast('Announcement posted 📢');
+    } catch (err) {
+      toast(`Could not save announcement: ${err.message}`);
+    }
   });
 
   function clearAnnForm() {
@@ -1888,11 +2021,17 @@
     document.getElementById('ann-type').selectedIndex = 0;
   }
 
-  function deleteAnn(id) {
+  async function deleteAnn(id) {
     if (!confirm('Delete this announcement?')) return;
-    lsSet(LS.announcements, lsGet(LS.announcements).filter(a => a.id !== id));
-    renderAnnouncements();
-    toast('Announcement removed');
+    try {
+      await deleteRecord('announcements', id);
+      await loadKind('announcements');
+      renderAnnouncements();
+      renderHome();
+      toast('Announcement removed');
+    } catch (err) {
+      toast(`Could not remove announcement: ${err.message}`);
+    }
   }
   window.deleteAnn = deleteAnn;
 
@@ -1946,8 +2085,10 @@
   // ==============================================================
   // 11. INIT
   // ==============================================================
-  seedIfNeeded(); // load demo data on first visit
-  renderHome();   // render initial tab
+  (async function init() {
+    await loadAllData();
+    renderHome();
+  })();
 
   </script>
 </body>
