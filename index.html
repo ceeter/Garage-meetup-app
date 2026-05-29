@@ -354,9 +354,21 @@
     }
     .auth-signedin { display: none; margin-bottom: 10px; }
     .auth-panel.signed-in .auth-signedin { display: block; }
-    .auth-panel.signed-in .auth-fields, .auth-panel.signed-in #auth-signup-btn, .auth-panel.signed-in #auth-signin-btn, .auth-panel:not(.signed-in) #auth-signout-btn { display: none; }
+    .auth-panel.signed-in .auth-fields, .auth-panel.signed-in .auth-tabs, .auth-panel.signed-in #auth-signup-btn, .auth-panel.signed-in #auth-signin-btn, .auth-panel:not(.signed-in) #auth-signout-btn { display: none; }
+    .auth-tabs {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+      margin-bottom: 12px; padding: 3px; border: 1px solid var(--border); border-radius: 999px;
+      background: rgba(255,255,255,0.03);
+    }
+    .auth-tab {
+      min-height: 38px; border-radius: 999px; color: var(--text-2);
+      font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .auth-tab.active { background: var(--accent); color: #fff; box-shadow: 0 0 14px var(--accent-glow); }
     .auth-fields { display: grid; gap: 10px; }
-    .auth-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .auth-actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+    .auth-helper-btn { color: var(--text-2); font-size: 0.82rem; text-align: center; padding: 10px 6px; }
+    .auth-helper-btn strong { color: var(--accent); }
     .auth-panel.signed-in .auth-actions { grid-template-columns: 1fr; }
     .auth-note {
       margin-top: 10px;
@@ -386,7 +398,6 @@
     .auth-required-note.show { display: block; }
     @media (min-width: 600px) {
       .auth-panel { padding: calc(66px + env(safe-area-inset-top, 0px)) 22px calc(var(--safe-bot) + 18px); }
-      .auth-actions { display: flex; }
     }
     @media (max-width: 380px) {
       .app-header { padding: 0 12px; }
@@ -926,13 +937,17 @@
         <div class="auth-top">
           <div>
             <div class="auth-title">Account</div>
-            <div class="auth-sub" id="auth-subtitle">Sign in to create or edit your garage profile.</div>
+            <div class="auth-sub" id="auth-subtitle">Sign in to manage your garage, meets, RSVPs, photos, and crew updates.</div>
           </div>
           <button class="auth-close" id="auth-close" type="button" aria-label="Close account menu">×</button>
         </div>
         <div class="auth-signedin">
           <div class="form-lbl">Signed in as</div>
           <div class="auth-user" id="auth-user-email">Signed out</div>
+        </div>
+        <div class="auth-tabs" role="tablist" aria-label="Account action">
+          <button class="auth-tab active" id="auth-mode-signin" type="button" role="tab" aria-selected="true">Sign In</button>
+          <button class="auth-tab" id="auth-mode-signup" type="button" role="tab" aria-selected="false">Sign Up</button>
         </div>
         <div class="auth-fields">
           <div class="form-grp">
@@ -945,8 +960,8 @@
           </div>
         </div>
         <div class="auth-actions">
-          <button class="btn-primary" id="auth-signup-btn">Sign Up</button>
-          <button class="btn-cancel" id="auth-signin-btn">Sign In</button>
+          <button class="btn-primary" id="auth-signin-btn">Sign In</button>
+          <button class="auth-helper-btn" id="auth-signup-btn" type="button">New here? <strong>Create an account</strong></button>
           <button class="btn-cancel" id="auth-signout-btn">Sign Out</button>
         </div>
         <div class="auth-status" id="auth-status" role="status" aria-live="polite"></div>
@@ -1690,7 +1705,29 @@
     }
   }
 
-  function openAuthPanel() {
+  let authMode = 'signin';
+
+  function setAuthMode(mode) {
+    authMode = mode === 'signup' ? 'signup' : 'signin';
+    const isSignUp = authMode === 'signup';
+    const subtitle = document.getElementById('auth-subtitle');
+    const signInBtn = document.getElementById('auth-signin-btn');
+    const signUpBtn = document.getElementById('auth-signup-btn');
+    const password = document.getElementById('auth-password');
+    document.getElementById('auth-mode-signin').classList.toggle('active', !isSignUp);
+    document.getElementById('auth-mode-signup').classList.toggle('active', isSignUp);
+    document.getElementById('auth-mode-signin').setAttribute('aria-selected', String(!isSignUp));
+    document.getElementById('auth-mode-signup').setAttribute('aria-selected', String(isSignUp));
+    subtitle.textContent = isSignUp
+      ? 'Create your account. Email verification may be required before you can sign in.'
+      : 'Sign in to manage your garage, meets, RSVPs, photos, and crew updates.';
+    signInBtn.textContent = isSignUp ? 'Create Account' : 'Sign In';
+    signUpBtn.innerHTML = isSignUp ? 'Already have an account? <strong>Sign in</strong>' : 'New here? <strong>Create an account</strong>';
+    password.autocomplete = isSignUp ? 'new-password' : 'current-password';
+  }
+
+  function openAuthPanel(mode = 'signin') {
+    if (!currentUserId()) setAuthMode(mode);
     const panel = document.getElementById('auth-panel');
     const trigger = document.getElementById('account-trigger');
     panel.classList.add('open');
@@ -1698,6 +1735,11 @@
     const firstInput = document.getElementById('auth-email');
     const signOutBtn = document.getElementById('auth-signout-btn');
     setTimeout(() => (currentUserId() ? signOutBtn : firstInput).focus(), 0);
+  }
+
+  function promptSignIn(message) {
+    openAuthPanel('signin');
+    if (message) setAuthStatus('error', message);
   }
 
   function closeAuthPanel() {
@@ -1741,15 +1783,16 @@
     trigger.classList.toggle('signed-in', signedIn);
     trigger.textContent = signedIn ? compactEmail(email) : 'Sign In';
     trigger.title = signedIn ? email : 'Sign in';
-    subtitle.textContent = signedIn ? 'Manage your signed-in account.' : 'Sign in to create or edit your garage profile.';
+    if (signedIn) subtitle.textContent = 'Manage your signed-in account.';
+    else setAuthMode(authMode);
     emailEl.textContent = signedIn ? email : 'Signed out';
     signOutBtn.disabled = !signedIn;
     signInBtn.disabled = signedIn;
     signUpBtn.disabled = signedIn;
-    addMemberBtn.disabled = !signedIn;
+    addMemberBtn.disabled = false;
     addMemberBtn.title = signedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
-    addMeetBtn.disabled = !signedIn;
+    addMeetBtn.disabled = false;
     addMeetBtn.title = signedIn ? 'Add Meet' : 'Sign in to create a meet';
     addMeetBtn.setAttribute('aria-label', addMeetBtn.title);
     saveMeetBtn.disabled = !signedIn;
@@ -1840,6 +1883,10 @@
   }
 
   async function signIn() {
+    if (authMode === 'signup') {
+      await signUp();
+      return;
+    }
     if (!isSupabaseReady() || !supabaseClient.auth) {
       setAuthStatus('error', 'Supabase Auth is not configured.');
       return;
@@ -1879,7 +1926,7 @@
 
   function wireAuth() {
     const panel = document.getElementById('auth-panel');
-    document.getElementById('account-trigger').addEventListener('click', openAuthPanel);
+    document.getElementById('account-trigger').addEventListener('click', () => openAuthPanel('signin'));
     document.getElementById('auth-close').addEventListener('click', closeAuthPanel);
     panel.addEventListener('click', (event) => {
       if (event.target === panel) closeAuthPanel();
@@ -1887,7 +1934,9 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && panel.classList.contains('open')) closeAuthPanel();
     });
-    document.getElementById('auth-signup-btn').addEventListener('click', signUp);
+    document.getElementById('auth-mode-signin').addEventListener('click', () => setAuthMode('signin'));
+    document.getElementById('auth-mode-signup').addEventListener('click', () => setAuthMode('signup'));
+    document.getElementById('auth-signup-btn').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
     document.getElementById('auth-signin-btn').addEventListener('click', signIn);
     document.getElementById('auth-signout-btn').addEventListener('click', signOut);
   }
@@ -2057,6 +2106,7 @@
       .eq('id', id);
 
     if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
+    if (kind === 'meets' && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
 
     const { error } = await query;
 
@@ -2073,6 +2123,7 @@
 
     let query = supabaseClient.from(DB[kind].table).delete().eq('id', id);
     if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
+    if (kind === 'meets' && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
     const { error } = await query;
     if (error) throw error;
   }
@@ -2227,17 +2278,16 @@
   });
 
   async function openMyMemberForm() {
+    if (isSupabaseReady()) await loadCurrentUser();
+    if (!currentUserId()) {
+      updateAuthUI();
+      promptSignIn('Please sign in to create or edit your garage profile.');
+      return;
+    }
+
     setMemberFormStatus('loading', 'Loading your garage profile...');
     setMemberFormSaving(true);
     document.getElementById('add-member-form').classList.add('open');
-
-    if (isSupabaseReady()) await loadCurrentUser();
-    if (!currentUserId()) {
-      setMemberFormSaving(false);
-      setMemberFormStatus('error', 'Please sign in first.');
-      updateAuthUI();
-      return;
-    }
 
     const mine = isSupabaseReady()
       ? await loadMyMemberProfile(appData.currentUser, false)
@@ -2254,7 +2304,7 @@
   function editMember(id) {
     const member = appData.members.find(m => m.id === id);
     if (!currentUserId() || !member || member.user_id !== currentUserId()) {
-      toast('Sign in to edit your own garage profile');
+      promptSignIn('Sign in to edit your own garage profile.');
       return;
     }
     fillMemberForm(member);
@@ -2391,6 +2441,19 @@
   // 6. MEETS / EVENTS
   // ==============================================================
 
+  function meetOwnerId(meet) {
+    return meet && (meet.created_by || meet.createdBy || meet.user_id || null);
+  }
+
+  function currentMeetActionUserId() {
+    return currentSessionUserId() || currentUserId();
+  }
+
+  function userOwnsMeet(meet) {
+    const uid = currentMeetActionUserId();
+    return !!uid && !!meetOwnerId(meet) && meetOwnerId(meet) === uid;
+  }
+
   function renderMeets() {
     const meets = appData.meets;
     const el = document.getElementById('meets-list');
@@ -2406,8 +2469,14 @@
     el.innerHTML = sorted.map(m => {
       const counts = normalizeRsvpCounts(m.rsvp);
       const myRsvp = canRsvp ? (m.myRsvp || null) : null;
+      const ownsMeet = userOwnsMeet(m);
+      const ownerActions = ownsMeet ? `
+        <div class="meet-ftr">
+          <button class="btn-sm-ghost" onclick="editMeet('${m.id}')">✏️ Edit</button>
+          <button class="btn-sm-ghost btn-sm-del" onclick="deleteMeet('${m.id}')">🗑 Delete</button>
+        </div>` : '';
       const rsvpButtons = ['going', 'maybe', 'not_going'].map(status => `
-            <button class="rsvp-btn ${rsvpButtonClass(status)} ${myRsvp===status ? 'on':''}" onclick="setRsvp('${m.id}','${status}')" ${canRsvp ? '' : 'disabled'}>${status === 'going' ? '✓' : status === 'maybe' ? '?' : '✗'} ${rsvpLabel(status)}</button>`).join('');
+            <button class="rsvp-btn ${rsvpButtonClass(status)} ${myRsvp===status ? 'on':''}" onclick="setRsvp('${m.id}','${status}')">${status === 'going' ? '✓' : status === 'maybe' ? '?' : '✗'} ${rsvpLabel(status)}</button>`).join('');
       return `
       <div class="meet-card" id="mc-${m.id}">
         <div class="meet-topbar"></div>
@@ -2435,17 +2504,14 @@
             ${m.checkedIn ? '✓ Checked In — You\'re Here!' : '📍 Check In to This Meet'}
           </button>
         </div>
-        <div class="meet-ftr">
-          <button class="btn-sm-ghost" onclick="editMeet('${m.id}')">✏️ Edit</button>
-          <button class="btn-sm-ghost btn-sm-del" onclick="deleteMeet('${m.id}')">🗑 Delete</button>
-        </div>
+        ${ownerActions}
       </div>`;
     }).join('');
   }
 
   async function getActiveMeetSession(message) {
     if (!isSupabaseReady() || !supabaseClient.auth) {
-      toast(message);
+      promptSignIn(message);
       return null;
     }
 
@@ -2461,7 +2527,7 @@
     if (!session || !session.user) {
       appData.currentUser = null;
       updateAuthUI();
-      toast(message);
+      promptSignIn(message);
       return null;
     }
 
@@ -2513,7 +2579,11 @@
     try {
       if (editId) {
         const existing = meets.find(m => m.id === editId) || {};
-        await updateRecord('meets', editId, { ...existing, ...meet, rsvp: existing.rsvp || emptyRsvpCounts(), myRsvp: existing.myRsvp || null, checkedIn: !!existing.checkedIn });
+        if (!userOwnsMeet(existing)) {
+          toast('Only the meet creator can save changes.');
+          return;
+        }
+        await updateRecord('meets', editId, { ...existing, ...meet, createdBy: meetOwnerId(existing), rsvp: existing.rsvp || emptyRsvpCounts(), myRsvp: existing.myRsvp || null, checkedIn: !!existing.checkedIn });
         toast('Meet updated ✓');
       } else {
         await addRecord('meets', meet);
@@ -2538,23 +2608,38 @@
   }
 
   // Open form pre-filled for editing
-  function editMeet(id) {
+  async function editMeet(id) {
+    const session = await getActiveMeetSession('Sign in to edit a meet.');
+    if (!session) return;
     const m = appData.meets.find(x => x.id === id);
     if (!m) return;
+    if (!userOwnsMeet(m)) {
+      toast('Only the meet creator can edit this meet.');
+      renderMeets();
+      return;
+    }
     document.getElementById('edit-meet-id').value    = id;
     document.getElementById('meet-form-ttl').textContent = 'Edit Meet';
-    document.getElementById('meet-name').value  = m.title;
-    document.getElementById('meet-date').value  = m.date;
-    document.getElementById('meet-time').value  = m.time;
-    document.getElementById('meet-loc').value   = m.location;
-    document.getElementById('meet-desc').value  = m.desc;
+    document.getElementById('meet-name').value  = m.title || '';
+    document.getElementById('meet-date').value  = m.date || '';
+    document.getElementById('meet-time').value  = m.time || '';
+    document.getElementById('meet-loc').value   = m.location || '';
+    document.getElementById('meet-desc').value  = m.desc || '';
     const form = document.getElementById('add-meet-form');
     form.classList.add('open');
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function deleteMeet(id) {
-    if (!confirm('Delete this meet?')) return;
+    const session = await getActiveMeetSession('Sign in to delete a meet.');
+    if (!session) return;
+    const m = appData.meets.find(x => x.id === id);
+    if (!m || !userOwnsMeet(m)) {
+      toast('Only the meet creator can delete this meet.');
+      renderMeets();
+      return;
+    }
+    if (!confirm('Delete this meet? This cannot be undone.')) return;
     try {
       await deleteRecord('meets', id);
       await loadKind('meets');
@@ -2571,7 +2656,7 @@
     const m = appData.meets.find(x => x.id === meetId);
     if (!m) return;
     if (!currentUserId()) {
-      toast('Sign in to RSVP.');
+      promptSignIn('Sign in to RSVP.');
       return;
     }
 
@@ -2598,7 +2683,6 @@
             .eq('user_id', currentUserId());
           if (error) throw error;
         }
-        await updateRecord('meets', meetId, { ...m, rsvp: m.rsvp });
         await loadKind('meets', false);
       } else {
         await updateRecord('meets', meetId, m);
@@ -2714,6 +2798,10 @@
 
   // Toggle add-photo form
   document.getElementById('toggle-add-photo').addEventListener('click', () => {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to post a photo.');
+      return;
+    }
     document.getElementById('add-photo-form').classList.toggle('open');
   });
   document.getElementById('cancel-photo-btn').addEventListener('click', () => {
@@ -2723,6 +2811,10 @@
 
   // Save photo
   document.getElementById('save-photo-btn').addEventListener('click', async () => {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to post a photo.');
+      return;
+    }
     const cap    = document.getElementById('ph-cap').value.trim();
     const author = document.getElementById('ph-author').value.trim();
     if (!cap || !author) { toast('Caption and name are required'); return; }
@@ -2807,6 +2899,10 @@
 
   // Toggle add-announcement form
   document.getElementById('toggle-add-ann').addEventListener('click', () => {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to post news.');
+      return;
+    }
     document.getElementById('add-ann-form').classList.toggle('open');
   });
   document.getElementById('cancel-ann-btn').addEventListener('click', () => {
@@ -2816,6 +2912,10 @@
 
   // Save announcement
   document.getElementById('save-ann-btn').addEventListener('click', async () => {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to post news.');
+      return;
+    }
     const title = document.getElementById('ann-title').value.trim();
     const text  = document.getElementById('ann-text').value.trim();
     if (!title || !text) { toast('Title and message are required'); return; }
