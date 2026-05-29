@@ -1,4 +1,4 @@
--- Garage Circle private MVP shared tables.
+-- CruiseCrew private MVP shared tables.
 -- Run this in the Supabase SQL editor for your project.
 
 create extension if not exists pgcrypto;
