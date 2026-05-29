@@ -477,7 +477,7 @@
     .hero-meta { font-size: 0.78rem; color: var(--text-2); position: relative; }
 
     .stats-row {
-      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px; margin-bottom: 18px;
     }
     .stat-card {
@@ -502,11 +502,13 @@
       padding: 11px 0; border-bottom: 1px solid var(--border);
     }
     .activity-item:last-child { border-bottom: none; }
-    .act-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
-      flex-shrink: 0; margin-top: 5px;
+    .act-icon {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--accent-lo);
+      border: 1px solid var(--accent-border);
+      font-size: 0.78rem;
+      flex-shrink: 0;
     }
     .act-txt  { font-size: 0.84rem; color: var(--text-2); flex: 1; }
     .act-txt strong { color: var(--text); font-weight: 600; }
@@ -905,9 +907,10 @@
       .sec-hdr { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
       .stats-row { gap: 8px; }
       .stat-card { padding: 12px 6px; }
-      .stat-n { font-size: 1.6rem; }
+      .stat-n { font-size: 1.45rem; }
+      .stat-lbl { font-size: 0.58rem; }
       .activity-item { flex-wrap: wrap; gap: 8px; }
-      .act-time { width: 100%; padding-left: 19px; }
+      .act-time { width: 100%; padding-left: 32px; }
       .photo-grid { grid-template-columns: 1fr; }
       .photo-card.wide .photo-thumb { aspect-ratio: 4/3; }
     }
@@ -1007,6 +1010,10 @@
         <div class="stat-card">
           <div class="stat-n" id="stat-photos">0</div>
           <div class="stat-lbl">Photos</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-n" id="stat-checkins">0</div>
+          <div class="stat-lbl">Check-Ins</div>
         </div>
       </div>
 
@@ -1569,6 +1576,7 @@
     photos: [],
     announcements: [],
     checkins: [],
+    rsvps: [],
     currentUser: null,
     currentSession: null
   };
@@ -1809,6 +1817,8 @@
     const garageNote = document.getElementById('garage-auth-note');
     const meetNote = document.getElementById('meet-auth-note');
     const cruiseStartBtn = document.getElementById('cruise-start');
+    const addPhotoBtn = document.getElementById('toggle-add-photo');
+    const addAnnBtn = document.getElementById('toggle-add-ann');
 
     panel.classList.toggle('signed-in', signedIn);
     trigger.classList.toggle('signed-in', signedIn);
@@ -1833,6 +1843,16 @@
       cruiseStartBtn.classList.toggle('dimmed', !signedIn);
       cruiseStartBtn.setAttribute('aria-disabled', String(!signedIn));
       cruiseStartBtn.title = signedIn ? 'Start a 4-hour check-in' : 'Sign in to start Cruise Mode';
+    }
+    if (addPhotoBtn) {
+      addPhotoBtn.disabled = false;
+      addPhotoBtn.title = signedIn ? 'Drop a Photo' : 'Sign in to drop a photo';
+      addPhotoBtn.setAttribute('aria-label', addPhotoBtn.title);
+    }
+    if (addAnnBtn) {
+      addAnnBtn.disabled = false;
+      addAnnBtn.title = signedIn ? 'Post Crew News' : 'Sign in to post crew news';
+      addAnnBtn.setAttribute('aria-label', addAnnBtn.title);
     }
 
     if (!signedIn) {
@@ -1871,7 +1891,7 @@
       try {
         await loadCurrentSession();
         await loadCurrentUser();
-        await loadAllData(false, true);
+        await loadAllData(false, false);
         updateAuthUI();
         renderHome();
         renderActiveTab();
@@ -2064,11 +2084,12 @@
   }
 
   async function loadMeetRsvps(showError = true) {
+    appData.rsvps = [];
     if (!isSupabaseReady() || !currentUserId() || !appData.meets.length) return [];
 
     const { data, error } = await supabaseClient
       .from('meet_rsvps')
-      .select('meet_id,user_id,status');
+      .select('meet_id,user_id,status,created_at,updated_at');
 
     if (error) {
       console.error('Could not load meet RSVPs', error);
@@ -2076,8 +2097,9 @@
       return [];
     }
 
-    decorateMeetsWithRsvps(data || []);
-    return data || [];
+    appData.rsvps = data || [];
+    decorateMeetsWithRsvps(appData.rsvps);
+    return appData.rsvps;
   }
 
   async function loadCheckins(showError = true) {
@@ -2237,56 +2259,136 @@
   // ==============================================================
 
   function renderHome() {
-    const members      = appData.members;
-    const meets        = appData.meets;
-    const photos       = appData.photos;
-    const announcements = appData.announcements;
+    const members       = appData.members || [];
+    const meets         = appData.meets || [];
+    const photos        = appData.photos || [];
+    const announcements = appData.announcements || [];
+    const checkins      = activeCheckins();
+    const upcomingMeets = upcomingMeetsList(meets);
 
-    // Stats
-    document.getElementById('stat-members').textContent = members.length;
-    document.getElementById('stat-meets').textContent   = meets.length;
-    document.getElementById('stat-photos').textContent  = photos.length;
+    // Stats from the app's existing Supabase-backed tables.
+    document.getElementById('stat-members').textContent  = members.length;
+    document.getElementById('stat-meets').textContent    = upcomingMeets.length;
+    document.getElementById('stat-photos').textContent   = photos.length;
+    document.getElementById('stat-checkins').textContent = checkins.length;
 
     // Hero meta
     document.getElementById('home-meta').textContent =
-      `${members.length} member${members.length !== 1 ? 's' : ''} · ` +
-      `${meets.length} upcoming meet${meets.length !== 1 ? 's' : ''} · ` +
-      `${photos.length} photo drop${photos.length !== 1 ? 's' : ''}`;
+      `${members.length} member profile${members.length !== 1 ? 's' : ''} · ` +
+      `${upcomingMeets.length} upcoming meet${upcomingMeets.length !== 1 ? 's' : ''} · ` +
+      `${photos.length} photo drop${photos.length !== 1 ? 's' : ''} · ` +
+      `${checkins.length} active check-in${checkins.length !== 1 ? 's' : ''}`;
 
     // Next meet preview
-    const sorted = [...meets].sort((a,b) => new Date(a.date) - new Date(b.date));
-    const nextMeet = sorted[0];
+    const nextMeet = upcomingMeets[0];
     const nmEl = document.getElementById('home-next-meet');
     if (nextMeet) {
+      const when = [fmtDate(nextMeet.date), fmtTime(nextMeet.time)].filter(Boolean).join(' · ');
       nmEl.innerHTML = `
         <div class="meet-card" style="margin-bottom:0">
           <div class="meet-topbar"></div>
           <div class="meet-bdy">
-            <div class="meet-date-badge">📅 ${fmtDate(nextMeet.date)} · ${fmtTime(nextMeet.time)}</div>
+            <div class="meet-date-badge">📅 ${esc(when)}</div>
             <div class="meet-title">${esc(nextMeet.title)}</div>
             <div class="meet-loc">📍 ${esc(nextMeet.location)}</div>
             <button class="checkin-btn" onclick="switchTab('meets')">View All Meets →</button>
           </div>
         </div>`;
     } else {
-      nmEl.innerHTML = `<div class="empty"><div class="empty-icon">🗓</div><div class="empty-title">No Meets Yet</div><div class="empty-sub">Add one in the Meets tab</div></div>`;
+      nmEl.innerHTML = `<div class="empty"><div class="empty-icon">🗓</div><div class="empty-title">No Upcoming Meets</div><div class="empty-sub">Check back soon or sign in to create one from the Meets tab.</div><button class="checkin-btn" onclick="switchTab('meets')">View All Meets →</button></div>`;
     }
 
-    // Activity feed — build from all data
-    const feed = [];
-    members.forEach(m => feed.push({ txt: `<strong>${esc(m.name)}</strong> joined with their ${esc(m.year)} ${esc(m.make)} ${esc(m.model)}`, t: 'Earlier' }));
-    meets.forEach(m   => feed.push({ txt: `<strong>${esc(m.title)}</strong> meet scheduled for ${fmtDate(m.date)}`, t: 'Recently' }));
-    photos.forEach(p  => feed.push({ txt: `<strong>${esc(p.author)}</strong> dropped a photo: "${esc(p.caption)}"`, t: 'Earlier' }));
-    announcements.forEach(a => feed.push({ txt: `<strong>New announcement:</strong> ${esc(a.title)}`, t: fmtDate(a.date) }));
-
+    // Recent Activity — a simple dashboard summary generated from existing data.
+    const feed = buildRecentActivity({ members, meets, photos, announcements, checkins });
     const feedEl = document.getElementById('activity-feed');
-    feedEl.innerHTML = feed.slice(0,7).map(a =>
+    feedEl.innerHTML = feed.slice(0, 8).map(a =>
       `<div class="activity-item">
-        <div class="act-dot"></div>
+        <div class="act-icon" aria-hidden="true">${esc(a.icon)}</div>
         <div class="act-txt">${a.txt}</div>
-        <div class="act-time">${a.t}</div>
+        <div class="act-time">${esc(formatActivityTime(a.date))}</div>
       </div>`
-    ).join('') || '<div style="font-size:0.84rem;color:var(--text-3)">No activity yet.</div>';
+    ).join('') || '<div style="font-size:0.84rem;color:var(--text-3)">No recent activity yet.</div>';
+  }
+
+  function meetStartsAt(meet) {
+    if (!meet || !meet.date) return null;
+    const time = meet.time || '23:59';
+    const date = new Date(`${meet.date}T${time}`);
+    return Number.isNaN(date.getTime()) ? new Date(`${meet.date}T12:00:00`) : date;
+  }
+
+  function upcomingMeetsList(meets) {
+    const now = new Date();
+    return [...(meets || [])]
+      .map(meet => ({ meet, startsAt: meetStartsAt(meet) }))
+      .filter(item => item.startsAt && item.startsAt >= now)
+      .sort((a, b) => a.startsAt - b.startsAt)
+      .map(item => item.meet);
+  }
+
+  function activityDate(row, fallbackDate) {
+    if (!row && !fallbackDate) return new Date(0);
+    const value = (row && (row.updated_at || row.created_at || row.date || row.expires_at)) || fallbackDate;
+    if (!value) return new Date(0);
+    const date = String(value).includes('T') ? new Date(value) : new Date(`${value}T12:00:00`);
+    return Number.isNaN(date.getTime()) ? new Date(0) : date;
+  }
+
+  function formatActivityTime(date) {
+    if (!date || date.getTime() === 0) return 'Recently';
+    const now = new Date();
+    const diffMs = now - date;
+    if (diffMs >= 0) {
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+    }
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function buildRecentActivity({ members, meets, photos, announcements, checkins }) {
+    const meetTitles = Object.fromEntries((meets || []).map(m => [m.id, m.title]));
+    const items = [];
+
+    (meets || []).forEach(m => items.push({
+      icon: '🗓',
+      date: activityDate(m, m.date),
+      txt: `<strong>${esc(m.title)}</strong> meet was created for ${esc(fmtDate(m.date))}`
+    }));
+
+    (appData.rsvps || []).forEach(r => items.push({
+      icon: '✅',
+      date: activityDate(r),
+      txt: `RSVP updated to <strong>${esc(rsvpLabel(normalizeRsvpStatus(r.status)))}</strong>${meetTitles[r.meet_id] ? ` for ${esc(meetTitles[r.meet_id])}` : ''}`
+    }));
+
+    (members || []).forEach(m => items.push({
+      icon: '🚗',
+      date: activityDate(m),
+      txt: `<strong>${esc(m.name)}</strong> updated a garage profile${m.make || m.model ? ` for a ${esc([m.year, m.make, m.model].filter(Boolean).join(' '))}` : ''}`
+    }));
+
+    (checkins || []).forEach(c => items.push({
+      icon: '📍',
+      date: activityDate(c),
+      txt: `<strong>${esc(c.display_name || 'A crew member')}</strong> checked in${c.location_text ? ` at ${esc(c.location_text)}` : ''}`
+    }));
+
+    (photos || []).forEach(p => items.push({
+      icon: '📸',
+      date: activityDate(p, p.date),
+      txt: `<strong>${esc(p.author || 'Someone')}</strong> dropped a photo${p.caption ? `: “${esc(p.caption)}”` : ''}`
+    }));
+
+    (announcements || []).forEach(a => items.push({
+      icon: '📢',
+      date: activityDate(a, a.date),
+      txt: `Crew news posted: <strong>${esc(a.title)}</strong>`
+    }));
+
+    return items.sort((a, b) => b.date - a.date);
   }
 
 
@@ -3072,6 +3174,10 @@
   }
 
   async function deletePhoto(id) {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to remove a photo.');
+      return;
+    }
     if (!confirm('Delete this photo?')) return;
     try {
       await deleteRecord('photos', id);
@@ -3172,6 +3278,10 @@
   }
 
   async function deleteAnn(id) {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to remove crew news.');
+      return;
+    }
     if (!confirm('Delete this announcement?')) return;
     try {
       await deleteRecord('announcements', id);
@@ -3242,7 +3352,7 @@
     try {
       await loadCurrentSession();
       await loadCurrentUser();
-      await loadAllData(true, true);
+      await loadAllData(true, false);
       updateAuthUI();
       renderHome();
       renderActiveTab();
