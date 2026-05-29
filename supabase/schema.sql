@@ -37,6 +37,7 @@ create table if not exists public.meet_rsvps (
   meet_id uuid references public.meets(id) on delete cascade,
   user_id uuid references auth.users(id) on delete cascade,
   status text not null check (status in ('going', 'maybe', 'not_going')),
+  display_name text,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   unique(meet_id, user_id)
@@ -52,7 +53,8 @@ create table if not exists public.check_ins (
   note text,
   meet_id uuid references public.meets(id) on delete set null,
   created_at timestamp with time zone default now(),
-  expires_at timestamp with time zone default now() + interval '4 hours'
+  expires_at timestamp with time zone default now() + interval '4 hours',
+  ended_at timestamp with time zone
 );
 
 create table if not exists public.photo_drops (
@@ -87,7 +89,9 @@ alter table public.check_ins add column if not exists location_text text;
 alter table public.check_ins add column if not exists note text;
 alter table public.check_ins add column if not exists meet_id uuid references public.meets(id) on delete set null;
 alter table public.check_ins add column if not exists created_at timestamp with time zone default now();
+alter table public.meet_rsvps add column if not exists display_name text;
 alter table public.check_ins add column if not exists expires_at timestamp with time zone default now() + interval '4 hours';
+alter table public.check_ins add column if not exists ended_at timestamp with time zone;
 create index if not exists check_ins_expires_at_idx on public.check_ins(expires_at);
 create index if not exists check_ins_user_id_idx on public.check_ins(user_id);
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
@@ -140,14 +144,16 @@ create policy "users can delete own member profile" on public.members
   for delete to authenticated using (auth.uid() = user_id);
 
 
--- Meet RSVP policy: signed-in users can read RSVP totals and manage only their own RSVP row.
+-- Meet RSVP policy: anyone with the app link can read RSVP activity,
+-- but signed-in users can manage only their own RSVP row.
 drop policy if exists "authenticated can read meet rsvps" on public.meet_rsvps;
+drop policy if exists "anon and authenticated can read meet rsvps" on public.meet_rsvps;
 drop policy if exists "users can insert own meet rsvp" on public.meet_rsvps;
 drop policy if exists "users can update own meet rsvp" on public.meet_rsvps;
 drop policy if exists "users can delete own meet rsvp" on public.meet_rsvps;
 
-create policy "authenticated can read meet rsvps" on public.meet_rsvps
-  for select to authenticated using (true);
+create policy "anon and authenticated can read meet rsvps" on public.meet_rsvps
+  for select to anon, authenticated using (true);
 create policy "users can insert own meet rsvp" on public.meet_rsvps
   for insert to authenticated with check (auth.uid() = user_id);
 create policy "users can update own meet rsvp" on public.meet_rsvps
@@ -156,14 +162,16 @@ create policy "users can delete own meet rsvp" on public.meet_rsvps
   for delete to authenticated using (auth.uid() = user_id);
 
 
--- Check-in policy: signed-in users can see active check-ins and only manage their own row.
+-- Check-in policy: anyone with the app link can read check-in activity,
+-- but signed-in users can manage only their own row.
 drop policy if exists "authenticated can read active check ins" on public.check_ins;
+drop policy if exists "anon and authenticated can read check ins" on public.check_ins;
 drop policy if exists "users can insert own check in" on public.check_ins;
 drop policy if exists "users can update own check in" on public.check_ins;
 drop policy if exists "users can delete own check in" on public.check_ins;
 
-create policy "authenticated can read active check ins" on public.check_ins
-  for select to authenticated using (expires_at > now());
+create policy "anon and authenticated can read check ins" on public.check_ins
+  for select to anon, authenticated using (true);
 create policy "users can insert own check in" on public.check_ins
   for insert to authenticated with check (auth.uid() = user_id);
 create policy "users can update own check in" on public.check_ins
