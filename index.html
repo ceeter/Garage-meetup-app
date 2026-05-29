@@ -3227,14 +3227,20 @@
       row.createdBy = currentSessionUserId() || currentUserId();
     }
 
+    const dbRow = toDb(kind, row);
     const { data, error } = await supabaseClient
       .from(DB[kind].table)
-      .insert([toDb(kind, row)])
+      .insert([dbRow])
       .select()
       .single();
 
     if (error) {
-      if (kind === 'meets') console.error('Supabase meet insert failed', error);
+      if (kind === 'photos') {
+        error.insertPayload = dbRow;
+        error.insertTable = DB[kind].table;
+        console.error('Supabase photo insert failed', error);
+        console.error('Supabase photo insert payload', dbRow);
+      } else if (kind === 'meets') console.error('Supabase meet insert failed', error);
       else console.error(`Could not add ${kind}`, error);
       throw error;
     }
@@ -4660,7 +4666,7 @@
     if (/larger than|jpeg|png|webp|supported|choose a photo|invalid/i.test(message) || phase === 'validate') return message || 'Please choose a valid JPEG, PNG, or WebP photo.';
     if (phase === 'compress') return message || 'Could not compress that photo. Please try another image.';
     if (phase === 'upload') return 'We could not upload that photo. Please check your connection and try again.';
-    if (phase === 'post') return 'The photo uploaded, but we could not post it to the feed. Please try again.';
+    if (phase === 'post') return 'The photo uploaded, but we could not post it to the feed. We removed the uploaded file so you can try again.';
     return message || 'Could not drop photo. Please try again.';
   }
 
@@ -4668,6 +4674,7 @@
   document.getElementById('save-photo-btn').addEventListener('click', async () => {
     if (photoUploadBusy) return;
     let uploadedPath = '';
+    let pendingPhotoInsertPayload = null;
     let phase = 'prepare';
     setPhotoUploadBusy(true);
     setPhotoStatus('busy', 'Preparing photo...');
@@ -4726,6 +4733,7 @@
         car_label: member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : ''
       };
 
+      pendingPhotoInsertPayload = toDb('photos', photo);
       await addRecord('photos', photo);
       uploadedPath = '';
       await loadKind('photos');
@@ -4735,6 +4743,10 @@
       renderHome();
       toast(`Photo posted for ${meet ? meet.title : (spotLabel || 'Photo Drop')} 📸`);
     } catch (err) {
+      if (phase === 'post') {
+        console.error('Photo feed/database insert failed after Storage upload', err);
+        console.error('Photo feed/database insert payload', (err && err.insertPayload) || pendingPhotoInsertPayload);
+      }
       if (uploadedPath) await cleanupUploadedPhoto(uploadedPath);
       const friendly = friendlyPhotoUploadError(err, phase);
       setPhotoStatus('error', friendly);
