@@ -957,11 +957,17 @@
       transition: border-color 0.18s, transform 0.18s;
     }
     .photo-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+    .photo-view-btn {
+      width: 100%; padding: 0; border: 0; background: transparent;
+      display: block; cursor: zoom-in; touch-action: manipulation;
+    }
+    .photo-view-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .photo-thumb {
       width: 100%; aspect-ratio: 4/3;
       background: linear-gradient(135deg, #181820 0%, #0E0E14 100%);
       object-fit: cover;
       border-bottom: 1px solid var(--border);
+      display: block;
     }
     div.photo-thumb {
       display: flex; align-items: center; justify-content: center;
@@ -972,6 +978,10 @@
       font-family: var(--f-display); font-size: 0.78rem; font-weight: 700;
       color: var(--accent); letter-spacing: 0.05em; text-transform: uppercase;
       margin-bottom: 5px;
+    }
+    .photo-spot {
+      font-size: 0.74rem; color: var(--text-3); margin: -2px 0 7px;
+      overflow-wrap: anywhere;
     }
     .photo-cap  {
       font-size: 0.82rem; color: var(--text); line-height: 1.35;
@@ -1036,7 +1046,7 @@
     .photo-status.show { margin-top: 10px; }
     .photo-status.error { color: var(--red); }
     .photo-status.success { color: var(--green); }
-    .photo-status.busy { color: var(--amber); }
+    .photo-status.busy, .photo-status.warning { color: var(--amber); }
     .photo-advanced {
       grid-column: 1 / -1;
       border: 1px solid var(--border);
@@ -1054,6 +1064,32 @@
       text-transform: uppercase;
     }
     .photo-advanced .form-grp { margin-top: 10px; }
+    .photo-lightbox {
+      position: fixed; inset: 0; z-index: 1200;
+      display: none; align-items: center; justify-content: center;
+      padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+      background: rgba(0,0,0,0.86);
+    }
+    .photo-lightbox.open { display: flex; }
+    .photo-lightbox-card {
+      position: relative; width: min(100%, 920px); max-height: 92vh;
+      display: grid; gap: 10px;
+    }
+    .photo-lightbox-img {
+      width: 100%; max-height: 78vh; object-fit: contain;
+      border-radius: var(--r-sm); background: #050507;
+      box-shadow: 0 18px 55px rgba(0,0,0,0.45);
+    }
+    .photo-lightbox-close {
+      position: absolute; top: -12px; right: -8px;
+      width: 44px; height: 44px; border-radius: 999px;
+      border: 1px solid var(--border2); background: var(--bg-card);
+      color: var(--text); font-size: 1.35rem; cursor: pointer;
+    }
+    .photo-lightbox-caption {
+      color: var(--text-2); font-size: 0.84rem; line-height: 1.45;
+      text-align: center; overflow-wrap: anywhere;
+    }
 
     /* ============================================================
        ANNOUNCEMENTS
@@ -1138,6 +1174,8 @@
       .act-time { width: 100%; padding-left: 32px; }
       .photo-grid { grid-template-columns: 1fr; }
       .photo-card.wide .photo-thumb { aspect-ratio: 4/3; }
+      .photo-lightbox { padding-inline: 10px; }
+      .photo-lightbox-close { top: 8px; right: 8px; }
     }
     @media (min-width: 600px) {
       .tab-section { padding: 22px 0; max-width: min(100%, 780px); margin: 0 auto; }
@@ -1601,6 +1639,14 @@
       <div class="photo-grid" id="photo-grid"></div>
 
     </section><!-- /photos -->
+
+    <div class="photo-lightbox" id="photo-lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+      <div class="photo-lightbox-card" id="photo-lightbox-card">
+        <button class="photo-lightbox-close" id="photo-lightbox-close" type="button" aria-label="Close photo viewer">×</button>
+        <img class="photo-lightbox-img" id="photo-lightbox-img" alt="">
+        <div class="photo-lightbox-caption" id="photo-lightbox-caption"></div>
+      </div>
+    </div>
 
 
     <!-- ======================================================
@@ -4307,8 +4353,11 @@
   function photoDropContext(photo) {
     const meetId = photo && photo.meet_id;
     if (meetId) return meetTitleById(meetId);
-    const spot = cleanDisplayName(photo && photo.spot_label, '');
-    return spot || 'General Photo Drop';
+    return 'Photo Drop';
+  }
+
+  function photoSpotText(photo) {
+    return cleanDisplayName(photo && photo.spot_label, '');
   }
 
   function photoCaption(photo) {
@@ -4326,7 +4375,7 @@
 
   function photoPosterName(photo) {
     const member = photoMember(photo);
-    return cleanDisplayName(member && member.name, cleanDisplayName(photo && photo.display_name, 'A crew member'));
+    return cleanDisplayName(member && member.name, cleanDisplayName(photo && photo.display_name, 'CruiseCrew member'));
   }
 
   function photoVehicleInfo(photo) {
@@ -4337,7 +4386,7 @@
 
   function userCanDeletePhoto(photo) {
     const uid = currentUserId();
-    return !!uid && !!photo && (photo.user_id === uid || currentUserIsAdmin());
+    return !!uid && !!photo && photo.user_id === uid;
   }
 
   function populatePhotoMeetSelect() {
@@ -4361,14 +4410,17 @@
     grid.innerHTML = photos.map(p => {
       const imageUrl = p.image_url || '';
       const context = photoDropContext(p);
+      const spot = photoSpotText(p);
       const caption = photoCaption(p);
       const postedAt = activityDate(p, p.date);
       const vehicle = photoVehicleInfo(p);
+      const altText = caption || (spot ? `${context} at ${spot}` : context);
       return `
         <div class="photo-card">
-          ${imageUrl ? `<img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(caption || `Photo from ${context}`)}" loading="lazy" onerror="this.replaceWith(photoFallback())">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
+          ${imageUrl ? `<button class="photo-view-btn" type="button" onclick="openPhotoLightbox('${p.id}')" aria-label="View ${esc(altText)}"><img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(altText)}" loading="lazy" onerror="this.closest('button').replaceWith(photoFallback())"></button>` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
           <div class="photo-info">
             <div class="photo-meet">${esc(context)}</div>
+            ${spot ? `<div class="photo-spot">📍 ${esc(spot)}</div>` : ''}
             ${caption ? `<div class="photo-cap">${esc(caption)}</div>` : ''}
             <div class="photo-meta">
               <div class="photo-meta-main">
@@ -4376,7 +4428,7 @@
                 ${vehicle ? `<div class="photo-car">${esc(vehicle)}</div>` : ''}
                 <div>${esc(formatActivityTime(postedAt))}</div>
               </div>
-              ${userCanDeletePhoto(p) ? `<button class="photo-del" onclick="deletePhoto('${p.id}')" title="Delete photo">✕</button>` : ''}
+              ${userCanDeletePhoto(p) ? `<button class="photo-del" onclick="deletePhoto('${p.id}')" title="Delete photo" aria-label="Delete photo">Delete</button>` : ''}
             </div>
           </div>
         </div>`;
@@ -4529,9 +4581,14 @@
     return { publicUrl, path };
   }
 
-  async function cleanupUploadedPhoto(path) {
-    if (!path || !isSupabaseReady()) return;
+  async function removeStoredPhoto(path) {
+    if (!path || !isSupabaseReady()) return null;
     const { error } = await supabaseClient.storage.from(PHOTO_BUCKET).remove([path]);
+    return error || null;
+  }
+
+  async function cleanupUploadedPhoto(path) {
+    const error = await removeStoredPhoto(path);
     if (error) console.warn('Could not clean up uploaded photo after failed save', error);
   }
 
@@ -4597,11 +4654,25 @@
     clearPhotoForm();
   });
 
+  function friendlyPhotoUploadError(err, phase) {
+    const message = String(err && err.message || '').trim();
+    if (/sign in|auth|jwt|session/i.test(message) || phase === 'auth') return 'Please sign in before dropping a photo.';
+    if (/larger than|jpeg|png|webp|supported|choose a photo|invalid/i.test(message) || phase === 'validate') return message || 'Please choose a valid JPEG, PNG, or WebP photo.';
+    if (phase === 'compress') return message || 'Could not compress that photo. Please try another image.';
+    if (phase === 'upload') return 'We could not upload that photo. Please check your connection and try again.';
+    if (phase === 'post') return 'The photo uploaded, but we could not post it to the feed. Please try again.';
+    return message || 'Could not drop photo. Please try again.';
+  }
+
   // Save photo
   document.getElementById('save-photo-btn').addEventListener('click', async () => {
     if (photoUploadBusy) return;
     let uploadedPath = '';
+    let phase = 'prepare';
+    setPhotoUploadBusy(true);
+    setPhotoStatus('busy', 'Preparing photo...');
     try {
+      phase = 'auth';
       const user = await currentSupabaseAuthUser();
       const meetId = document.getElementById('ph-meet').value || null;
       const fileInput = document.getElementById('ph-file');
@@ -4610,37 +4681,36 @@
       const spotLabel = document.getElementById('ph-spot').value.trim();
       const caption = document.getElementById('ph-cap').value.trim();
       const meet = meetId ? appData.meets.find(m => m.id === meetId) : null;
-      if (meetId && !meet) { setPhotoStatus('error', 'Choose a valid meet for this photo.'); return; }
+      if (meetId && !meet) { phase = 'validate'; throw new Error('Choose a valid meet for this photo.'); }
 
       let imageUrl = pastedUrl;
       let storagePath = null;
       if (file) {
+        phase = 'validate';
         const validation = validatePhotoFile(file);
-        if (validation) { setPhotoStatus('error', validation); return; }
-        setPhotoUploadBusy(true);
+        if (validation) throw new Error(validation);
         selectedPhotoProcessId += 1;
-        setPhotoStatus('busy', 'Preparing photo...');
+        phase = 'compress';
+        setPhotoStatus('busy', 'Compressing photo...');
         let uploadFile = selectedPhotoSourceFile === file ? selectedCompressedPhotoFile : null;
         if (!uploadFile) {
-          setPhotoStatus('busy', 'Compressing photo...');
           uploadFile = await compressImageFile(file);
         }
         const compressedValidation = validateCompressedPhotoFile(uploadFile);
-        if (compressedValidation) throw new Error(compressedValidation);
-        setPhotoStatus('busy', `${photoCompressionMessage(file, uploadFile)}. Uploading photo...`);
+        if (compressedValidation) { phase = 'validate'; throw new Error(compressedValidation); }
+        phase = 'upload';
+        setPhotoStatus('busy', 'Uploading photo...');
         const uploaded = await uploadPhotoFile(user, uploadFile);
         imageUrl = uploaded.publicUrl;
         storagePath = uploaded.path;
         uploadedPath = uploaded.path;
-        setPhotoStatus('busy', 'Upload complete. Saving photo drop…');
       } else if (!imageUrl) {
-        setPhotoStatus('error', 'Choose a photo from your device before dropping it.');
-        return;
-      } else {
-        setPhotoUploadBusy(true);
-        setPhotoStatus('busy', 'Saving pasted image URL…');
+        phase = 'validate';
+        throw new Error('Choose a photo from your device before dropping it.');
       }
 
+      phase = 'post';
+      setPhotoStatus('busy', 'Posting photo...');
       const member = myMemberProfile();
       const photo = {
         id: genId(),
@@ -4660,16 +4730,16 @@
       uploadedPath = '';
       await loadKind('photos');
       clearPhotoForm({ preserveStatus: true });
-      setPhotoStatus('success', 'Photo dropped successfully.');
+      setPhotoStatus('success', 'Photo posted!');
       renderPhotos();
       renderHome();
-      toast(`Photo dropped for ${meet ? meet.title : (spotLabel || 'General Photo Drop')} 📸`);
+      toast(`Photo posted for ${meet ? meet.title : (spotLabel || 'Photo Drop')} 📸`);
     } catch (err) {
       if (uploadedPath) await cleanupUploadedPhoto(uploadedPath);
-      const message = err && err.message ? err.message : 'Unknown error';
-      setPhotoStatus('error', `Could not drop photo: ${message}`);
-      toast(`Could not drop photo: ${message}`);
-      if (/sign in/i.test(message)) promptSignIn('Sign in to drop a photo.');
+      const friendly = friendlyPhotoUploadError(err, phase);
+      setPhotoStatus('error', friendly);
+      toast(friendly);
+      if (/sign in/i.test(friendly)) promptSignIn('Sign in to drop a photo.');
     } finally {
       setPhotoUploadBusy(false);
     }
@@ -4697,26 +4767,78 @@
     if (!preserveStatus) setPhotoStatus('', '');
   }
 
+  function openPhotoLightbox(id) {
+    const photo = appData.photos.find(p => p.id === id);
+    if (!photo || !photo.image_url) return;
+    const modal = document.getElementById('photo-lightbox');
+    const img = document.getElementById('photo-lightbox-img');
+    const captionEl = document.getElementById('photo-lightbox-caption');
+    if (!modal || !img || !captionEl) return;
+    const context = photoDropContext(photo);
+    const spot = photoSpotText(photo);
+    const caption = photoCaption(photo);
+    img.src = photo.image_url;
+    img.alt = caption || (spot ? `${context} at ${spot}` : context);
+    captionEl.textContent = [context, spot, caption].filter(Boolean).join(' · ');
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePhotoLightbox() {
+    const modal = document.getElementById('photo-lightbox');
+    const img = document.getElementById('photo-lightbox-img');
+    if (modal) modal.classList.remove('open');
+    if (img) img.removeAttribute('src');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('photo-lightbox').addEventListener('click', (event) => {
+    if (event.target && event.target.id === 'photo-lightbox') closePhotoLightbox();
+  });
+  document.getElementById('photo-lightbox-close').addEventListener('click', closePhotoLightbox);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closePhotoLightbox();
+  });
+  window.openPhotoLightbox = openPhotoLightbox;
+
   async function deletePhoto(id) {
     const photo = appData.photos.find(p => p.id === id);
     if (!currentUserId()) {
-      promptSignIn('Sign in as the photo owner or an admin to remove it.');
+      promptSignIn('Sign in as the photo owner to remove it.');
       return;
     }
     if (!userCanDeletePhoto(photo)) {
-      toast('Admin only: you can delete only your own photos.');
+      toast('You can delete only photos you posted.');
       return;
     }
     if (!confirm('Delete this photo?')) return;
+    setPhotoStatus('busy', 'Deleting photo...');
     try {
       await deleteRecord('photos', id);
-      if (photo.storage_path) cleanupUploadedPhoto(photo.storage_path);
-      await loadKind('photos');
-      renderPhotos();
-      renderHome();
-      toast('Photo removed');
     } catch (err) {
-      toast(`Could not remove photo: ${err.message}`);
+      const message = err && err.message ? err.message : 'Please try again.';
+      setPhotoStatus('error', `Could not delete photo: ${message}`);
+      toast(`Could not delete photo: ${message}`);
+      return;
+    }
+
+    let storageWarning = '';
+    if (photo.storage_path) {
+      const storageError = await removeStoredPhoto(photo.storage_path);
+      if (storageError) {
+        console.warn('Photo database row was deleted, but storage cleanup failed', storageError);
+        storageWarning = 'Photo removed from the feed, but we could not remove the stored file. Please try again later if it still appears.';
+      }
+    }
+    await loadKind('photos');
+    renderPhotos();
+    renderHome();
+    if (storageWarning) {
+      setPhotoStatus('warning', storageWarning);
+      toast(storageWarning);
+    } else {
+      setPhotoStatus('success', 'Photo deleted.');
+      toast('Photo deleted');
     }
   }
   window.deletePhoto = deletePhoto;
