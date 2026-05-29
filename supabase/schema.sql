@@ -6,10 +6,14 @@ create extension if not exists pgcrypto;
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  slug text not null,
   description text default '',
+  is_public boolean not null default true,
   owner_id uuid references auth.users(id) on delete set null,
+  created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique(slug)
 );
 
 create table if not exists public.group_memberships (
@@ -101,9 +105,17 @@ create table if not exists public.announcements (
   created_at timestamptz not null default now()
 );
 
+alter table public.groups add column if not exists slug text;
 alter table public.groups add column if not exists description text default '';
+alter table public.groups add column if not exists is_public boolean not null default true;
 alter table public.groups add column if not exists owner_id uuid references auth.users(id) on delete set null;
+alter table public.groups add column if not exists created_by uuid references auth.users(id) on delete set null;
 alter table public.groups add column if not exists updated_at timestamptz not null default now();
+update public.groups
+set slug = trim(both '-' from lower(regexp_replace(trim(name), '[^a-zA-Z0-9]+', '-', 'g'))) || '-' || left(id::text, 8)
+where slug is null or slug = '';
+alter table public.groups alter column slug set not null;
+create unique index if not exists groups_slug_key on public.groups(slug);
 alter table public.group_memberships add column if not exists role text not null default 'member';
 alter table public.members add column if not exists user_id uuid unique references auth.users(id) on delete cascade;
 alter table public.members add column if not exists updated_at timestamptz not null default now();

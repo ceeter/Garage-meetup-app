@@ -1759,6 +1759,23 @@
     return group ? group.name : 'All CruiseCrew';
   }
 
+  function clearSelectedGroup(reason = '') {
+    if (!selectedGroupId()) return;
+    console.warn('Clearing selected crew and falling back to All CruiseCrew', reason);
+    appData.selectedGroupId = '';
+    localStorage.removeItem(LS.selectedGroup);
+  }
+
+  function slugifyGroupName(name) {
+    const slug = String(name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64);
+    return `${slug || 'crew'}-${Date.now().toString(36)}`;
+  }
+
   function scopedMembers() {
     if (!selectedGroupId()) return appData.members || [];
     const ids = groupMembershipUserIds();
@@ -2356,31 +2373,42 @@
     appData.groups = [];
     appData.groupMemberships = [];
     if (!isSupabaseReady() || !currentUserId()) {
+      clearSelectedGroup('groups unavailable while signed out or Supabase is not configured');
       renderGroupSwitcher();
       return [];
     }
 
-    const [{ data: groups, error: groupsError }, { data: memberships, error: membershipsError }] = await Promise.all([
-      supabaseClient.from('groups').select('*').order('name', { ascending: true }),
-      supabaseClient.from('group_memberships').select('*')
-    ]);
+    try {
+      const [groupsResponse, membershipsResponse] = await Promise.all([
+        supabaseClient.from('groups').select('*').order('name', { ascending: true }),
+        supabaseClient.from('group_memberships').select('*')
+      ]);
 
-    if (groupsError || membershipsError) {
-      const error = groupsError || membershipsError;
-      console.error('Could not load groups', error);
-      if (showError) toast(`Could not load crews: ${error.message}`);
+      if (groupsResponse.error) console.error('Supabase groups query failed', groupsResponse);
+      if (membershipsResponse.error) console.error('Supabase group_memberships query failed', membershipsResponse);
+
+      if (groupsResponse.error || membershipsResponse.error) {
+        const error = groupsResponse.error || membershipsResponse.error;
+        clearSelectedGroup(error.message || 'crew query failed');
+        if (showError) toast(`Could not load crews: ${error.message}`);
+        renderGroupSwitcher();
+        return [];
+      }
+
+      appData.groups = groupsResponse.data || [];
+      appData.groupMemberships = membershipsResponse.data || [];
+      if (selectedGroupId() && !appData.groups.some(g => g.id === selectedGroupId())) {
+        clearSelectedGroup('stored crew id was not returned by Supabase');
+      }
+      renderGroupSwitcher();
+      return appData.groups;
+    } catch (err) {
+      console.error('Supabase groups load crashed', err);
+      clearSelectedGroup(err.message || 'crew load crashed');
+      if (showError) toast(`Could not load crews: ${err.message}`);
       renderGroupSwitcher();
       return [];
     }
-
-    appData.groups = groups || [];
-    appData.groupMemberships = memberships || [];
-    if (selectedGroupId() && !appData.groups.some(g => g.id === selectedGroupId())) {
-      appData.selectedGroupId = '';
-      localStorage.removeItem(LS.selectedGroup);
-    }
-    renderGroupSwitcher();
-    return appData.groups;
   }
 
   function renderGroupSwitcher() {
@@ -2399,13 +2427,25 @@
     if (!currentUserId()) { promptSignIn('Sign in to create a crew.'); return; }
     const name = prompt('Crew name');
     if (!name || !name.trim()) return;
+    const trimmedName = name.trim();
     try {
+      const payload = {
+        name: trimmedName,
+        slug: slugifyGroupName(trimmedName),
+        description: '',
+        is_public: true,
+        owner_id: currentUserId(),
+        created_by: currentUserId()
+      };
       const { data: group, error } = await supabaseClient
         .from('groups')
-        .insert([{ name: name.trim(), owner_id: currentUserId() }])
+        .insert([payload])
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase create group failed', { error, payload });
+        throw error;
+      }
       appData.selectedGroupId = group.id;
       localStorage.setItem(LS.selectedGroup, group.id);
       await loadAllData(false, false);
@@ -2413,6 +2453,7 @@
       renderActiveTab();
       toast(`Created ${group.name}`);
     } catch (err) {
+      console.error('Could not create crew', err);
       toast(`Could not create crew: ${err.message}`);
     }
   }
@@ -2421,15 +2462,26 @@
     if (!currentUserId() || !groupId) return;
     const hasMembership = (appData.groupMemberships || []).some(m => m.group_id === groupId && m.user_id === currentUserId());
     if (hasMembership) return;
+    const payload = { group_id: groupId, user_id: currentUserId(), role: 'member' };
     const { error } = await supabaseClient
       .from('group_memberships')
-      .insert([{ group_id: groupId, user_id: currentUserId(), role: 'member' }]);
-    if (error) throw error;
+      .insert([payload]);
+    if (error) {
+      console.error('Supabase join group failed', { error, payload });
+      throw error;
+    }
     await loadGroups(false);
   }
 
   async function selectGroup(groupId) {
     try {
+      if (groupId && !(appData.groups || []).some(g => g.id === groupId)) {
+        clearSelectedGroup('selected crew is no longer available');
+        renderGroupSwitcher();
+        renderHome();
+        renderActiveTab();
+        return;
+      }
       if (groupId) await joinSelectedGroup(groupId);
       appData.selectedGroupId = groupId || '';
       if (groupId) localStorage.setItem(LS.selectedGroup, groupId);
@@ -2438,6 +2490,7 @@
       renderHome();
       renderActiveTab();
     } catch (err) {
+      console.error('Could not select crew', err);
       toast(`Could not join crew: ${err.message}`);
       renderGroupSwitcher();
     }
@@ -2552,7 +2605,15 @@
   async function loadAllData(showToast = true, throwOnError = false) {
     if (!isSupabaseReady()) seedIfNeeded();
 
-    await loadGroups(showToast);
+    try {
+      await loadGroups(showToast);
+    } catch (err) {
+      console.error('Crew loading failed without blocking app initialization', err);
+      clearSelectedGroup(err.message || 'crew load failed');
+      renderGroupSwitcher();
+      if (showToast) toast(`Could not load crews: ${err.message}`);
+      if (throwOnError) throw err;
+    }
     const kinds = ['members','meets','photos','announcements'];
     const results = await Promise.allSettled([
       ...kinds.map(kind => loadKind(kind, showToast, throwOnError)),
