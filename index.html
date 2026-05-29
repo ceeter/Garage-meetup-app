@@ -2103,8 +2103,13 @@
   const PHOTO_BUCKET = 'cruisecrew-photos';
   const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
   const PHOTO_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const PHOTO_COMPRESSED_MAX_BYTES = 3 * 1024 * 1024;
+  const PHOTO_COMPRESS_OPTIONS = { maxSide: 1600, webpQuality: 0.78, jpegQuality: 0.82 };
 
   let selectedPhotoPreviewUrl = '';
+  let selectedCompressedPhotoFile = null;
+  let selectedPhotoSourceFile = null;
+  let selectedPhotoProcessId = 0;
   let photoUploadBusy = false;
 
   let authStateUnsubscribe = null;
@@ -4412,6 +4417,85 @@
     return ['jpg','jpeg','png','webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'jpg';
   }
 
+  function formatPhotoSize(bytes) {
+    if (!Number.isFinite(bytes)) return '';
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  function photoCompressionMessage(originalFile, compressedFile) {
+    if (!originalFile || !compressedFile) return '';
+    return `Compressed from ${formatPhotoSize(originalFile.size)} to ${formatPhotoSize(compressedFile.size)}`;
+  }
+
+  function blobFromCanvas(canvas, type, quality) {
+    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+  }
+
+  function loadImageFile(file) {
+    if (window.createImageBitmap) return createImageBitmap(file);
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image. Please choose another photo.')); };
+      img.src = url;
+    });
+  }
+
+  function fileNameWithExtension(name, extension) {
+    const base = String(name || 'photo').replace(/\.[^.]*$/, '') || 'photo';
+    return `${base}.${extension}`;
+  }
+
+  async function compressImageFile(file, options = {}) {
+    const settings = { ...PHOTO_COMPRESS_OPTIONS, ...options };
+    const image = await loadImageFile(file);
+    try {
+      const width = image.width || image.naturalWidth;
+      const height = image.height || image.naturalHeight;
+      if (!width || !height) throw new Error('Could not read that image size. Please choose another photo.');
+      const scale = Math.min(1, settings.maxSide / Math.max(width, height));
+      const targetWidth = Math.max(1, Math.round(width * scale));
+      const targetHeight = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Your browser could not prepare that image for upload.');
+      ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+      let blob = await blobFromCanvas(canvas, 'image/webp', settings.webpQuality);
+      let type = 'image/webp';
+      let extension = 'webp';
+      if (!blob || blob.type !== 'image/webp') {
+        const jpegCanvas = document.createElement('canvas');
+        jpegCanvas.width = targetWidth;
+        jpegCanvas.height = targetHeight;
+        const jpegCtx = jpegCanvas.getContext('2d');
+        if (!jpegCtx) throw new Error('Your browser could not prepare that image for upload.');
+        jpegCtx.fillStyle = '#fff';
+        jpegCtx.fillRect(0, 0, targetWidth, targetHeight);
+        jpegCtx.drawImage(image, 0, 0, targetWidth, targetHeight);
+        blob = await blobFromCanvas(jpegCanvas, 'image/jpeg', settings.jpegQuality);
+        type = 'image/jpeg';
+        extension = 'jpg';
+      }
+      if (!blob || (type === 'image/jpeg' && blob.type !== 'image/jpeg')) throw new Error('Could not compress that image. Please try another photo.');
+      const name = fileNameWithExtension(file.name, extension);
+      return typeof File === 'function' ? new File([blob], name, { type, lastModified: Date.now() }) : Object.assign(blob, { name, type });
+    } finally {
+      if (image && typeof image.close === 'function') image.close();
+    }
+  }
+
+  function validateCompressedPhotoFile(file) {
+    if (!file) return 'Could not prepare that photo for upload. Please try another image.';
+    if (!['image/webp', 'image/jpeg'].includes(file.type)) return 'Could not prepare that photo in a supported upload format.';
+    if (file.size > PHOTO_COMPRESSED_MAX_BYTES) return 'That photo is still larger than 3 MB after compression. Please choose a smaller image.';
+    return '';
+  }
+
   function validatePhotoFile(file) {
     if (!file) return 'Choose a photo from your device before dropping it.';
     if (!PHOTO_ALLOWED_TYPES.includes(file.type)) return 'Please choose a JPEG, PNG, or WebP image.';
@@ -4430,7 +4514,7 @@
   }
 
   async function uploadPhotoFile(user, file) {
-    const extension = photoFileExtension(file);
+    const extension = file.type === 'image/webp' ? 'webp' : 'jpg';
     const uuid = window.crypto && crypto.randomUUID ? crypto.randomUUID() : genId().replace(/^_/, '');
     const path = `${user.id}/${Date.now()}-${uuid}.${extension}`;
     const { error } = await supabaseClient.storage.from(PHOTO_BUCKET).upload(path, file, {
@@ -4451,10 +4535,13 @@
     if (error) console.warn('Could not clean up uploaded photo after failed save', error);
   }
 
-  function updatePhotoPreview() {
+  async function updatePhotoPreview() {
     const input = document.getElementById('ph-file');
     const preview = document.getElementById('ph-preview');
     const file = input && input.files && input.files[0];
+    const processId = ++selectedPhotoProcessId;
+    selectedCompressedPhotoFile = null;
+    selectedPhotoSourceFile = null;
     if (selectedPhotoPreviewUrl) URL.revokeObjectURL(selectedPhotoPreviewUrl);
     selectedPhotoPreviewUrl = '';
     if (!preview) return;
@@ -4468,9 +4555,30 @@
       if (input) input.value = '';
       return;
     }
-    selectedPhotoPreviewUrl = URL.createObjectURL(file);
-    preview.src = selectedPhotoPreviewUrl;
-    preview.classList.add('show');
+    try {
+      setPhotoStatus('busy', 'Preparing photo...');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (processId !== selectedPhotoProcessId) return;
+      setPhotoStatus('busy', 'Compressing photo...');
+      const compressedFile = await compressImageFile(file);
+      if (processId !== selectedPhotoProcessId) return;
+      const compressedValidation = validateCompressedPhotoFile(compressedFile);
+      if (compressedValidation) {
+        setPhotoStatus('error', compressedValidation);
+        if (input) input.value = '';
+        return;
+      }
+      selectedCompressedPhotoFile = compressedFile;
+      selectedPhotoSourceFile = file;
+      selectedPhotoPreviewUrl = URL.createObjectURL(compressedFile);
+      preview.src = selectedPhotoPreviewUrl;
+      preview.classList.add('show');
+      setPhotoStatus('', photoCompressionMessage(file, compressedFile));
+    } catch (err) {
+      if (processId !== selectedPhotoProcessId) return;
+      if (input) input.value = '';
+      setPhotoStatus('error', err && err.message ? err.message : 'Could not prepare that photo. Please try another image.');
+    }
   }
 
   document.getElementById('ph-file').addEventListener('change', updatePhotoPreview);
@@ -4510,8 +4618,17 @@
         const validation = validatePhotoFile(file);
         if (validation) { setPhotoStatus('error', validation); return; }
         setPhotoUploadBusy(true);
-        setPhotoStatus('busy', 'Uploading your photo…');
-        const uploaded = await uploadPhotoFile(user, file);
+        selectedPhotoProcessId += 1;
+        setPhotoStatus('busy', 'Preparing photo...');
+        let uploadFile = selectedPhotoSourceFile === file ? selectedCompressedPhotoFile : null;
+        if (!uploadFile) {
+          setPhotoStatus('busy', 'Compressing photo...');
+          uploadFile = await compressImageFile(file);
+        }
+        const compressedValidation = validateCompressedPhotoFile(uploadFile);
+        if (compressedValidation) throw new Error(compressedValidation);
+        setPhotoStatus('busy', `${photoCompressionMessage(file, uploadFile)}. Uploading photo...`);
+        const uploaded = await uploadPhotoFile(user, uploadFile);
         imageUrl = uploaded.publicUrl;
         storagePath = uploaded.path;
         uploadedPath = uploaded.path;
@@ -4566,6 +4683,9 @@
     const fileInput = document.getElementById('ph-file');
     if (fileInput) fileInput.value = '';
     const preview = document.getElementById('ph-preview');
+    selectedCompressedPhotoFile = null;
+    selectedPhotoSourceFile = null;
+    selectedPhotoProcessId += 1;
     if (selectedPhotoPreviewUrl) URL.revokeObjectURL(selectedPhotoPreviewUrl);
     selectedPhotoPreviewUrl = '';
     if (preview) {
