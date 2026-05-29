@@ -3379,7 +3379,7 @@
     const meetId = photo && (photo.meet_id || photo.meetId);
     if (meetId) return meetTitleById(meetId);
     const spot = cleanDisplayName(photo && (photo.spot_label || photo.spotLabel), '');
-    return spot || 'General crew photo';
+    return spot || 'General Photo Drop';
   }
 
   function photoCaption(photo) {
@@ -3415,7 +3415,7 @@
     const select = document.getElementById('ph-meet');
     if (!select) return;
     const meets = sortedMeetsForSelect();
-    select.innerHTML = `<option value="">No meet / general photo</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`;
+    select.innerHTML = `<option value="">General Photo Drop</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`;
     select.disabled = false;
   }
 
@@ -3512,7 +3512,7 @@
       document.getElementById('add-photo-form').classList.remove('open');
       renderPhotos();
       renderHome();
-      toast(`Photo dropped for ${meet ? meet.title : (spotLabel || 'general crew')} 📸`);
+      toast(`Photo dropped for ${meet ? meet.title : (spotLabel || 'General Photo Drop')} 📸`);
     } catch (err) {
       toast(`Could not save photo: ${err.message}`);
     }
