@@ -617,11 +617,51 @@
       line-height: 1.55; margin-bottom: 13px;
     }
     .rsvp-counts {
-      display: flex; gap: 14px; flex-wrap: wrap;
+      display: flex; gap: 8px; flex-wrap: wrap;
       font-size: 0.74rem; color: var(--text-3); margin-bottom: 11px;
     }
-    .rsvp-ct { display: flex; align-items: center; gap: 5px; }
+    .rsvp-ct {
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+    }
     .dot-sm  { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .meet-roster {
+      border-top: 1px solid var(--border);
+      margin-top: 12px;
+      padding-top: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .roster-group {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 10px;
+    }
+    .roster-title {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      font-family: var(--f-display);
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-2); margin-bottom: 7px;
+    }
+    .roster-pill { color: var(--text-3); font-size: 0.68rem; }
+    .roster-list { display: grid; gap: 7px; }
+    .roster-person { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+    .roster-avatar {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent-lo); border: 1px solid var(--accent-border);
+      color: var(--accent); font-family: var(--f-display);
+      font-size: 0.68rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .roster-name { font-size: 0.82rem; font-weight: 600; color: var(--text); line-height: 1.25; }
+    .roster-car { font-size: 0.72rem; color: var(--text-3); line-height: 1.3; margin-top: 1px; }
+    .roster-empty { color: var(--text-3); font-size: 0.78rem; }
     .rsvp-row { display: flex; gap: 7px; margin-bottom: 11px; }
     .rsvp-btn {
       flex: 1; min-width: 0;
@@ -2318,6 +2358,7 @@
             <div class="meet-date-badge">📅 ${esc(when)}</div>
             <div class="meet-title">${esc(nextMeet.title)}</div>
             <div class="meet-loc">📍 ${esc(nextMeet.location)}</div>
+            ${renderMeetCounts(nextMeet, meetCheckedInRoster(nextMeet.id).length)}
             <button class="checkin-btn" onclick="switchTab('meets')">View All Meets →</button>
           </div>
         </div>`;
@@ -2661,6 +2702,76 @@
     return !!uid && !!meetOwnerId(meet) && meetOwnerId(meet) === uid;
   }
 
+  function memberForUser(userId) {
+    return userId ? appData.members.find(member => member.user_id === userId) : null;
+  }
+
+  function vehicleLabelForPerson(row) {
+    const member = row && memberForUser(row.user_id);
+    const fromProfile = member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : '';
+    return cleanDisplayName(fromProfile || (row && row.car_label), '');
+  }
+
+  function rosterDisplayName(row) {
+    const member = row && memberForUser(row.user_id);
+    return cleanDisplayName(member && member.name, actorNameForUser(row, 'CruiseCrew Member'));
+  }
+
+  function meetRsvpRoster(meetId, status) {
+    return (appData.rsvps || [])
+      .filter(row => row && row.meet_id === meetId && normalizeRsvpStatus(row.status) === status)
+      .map(row => ({ name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function meetCheckedInRoster(meetId) {
+    return activeCheckins()
+      .filter(row => row && row.meet_id === meetId)
+      .map(row => ({ name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function renderRosterPeople(people, emptyText) {
+    if (!people.length) return `<div class="roster-empty">${esc(emptyText)}</div>`;
+    return `<div class="roster-list">${people.map(person => `
+      <div class="roster-person">
+        <div class="roster-avatar">${esc(initials(person.name))}</div>
+        <div>
+          <div class="roster-name">${esc(person.name)}</div>
+          ${person.car ? `<div class="roster-car">${esc(person.car)}</div>` : ''}
+        </div>
+      </div>`).join('')}</div>`;
+  }
+
+  function renderMeetCounts(meet, checkedInCount) {
+    const counts = normalizeRsvpCounts(meet.rsvp);
+    return `<div class="rsvp-counts">
+      <div class="rsvp-ct"><div class="dot-sm" style="background:var(--green)"></div>${counts.going} Going</div>
+      <div class="rsvp-ct"><div class="dot-sm" style="background:var(--amber)"></div>${counts.maybe} Maybe Going</div>
+      <div class="rsvp-ct"><div class="dot-sm" style="background:var(--blue)"></div>${checkedInCount} Checked In</div>
+    </div>`;
+  }
+
+  function renderMeetRoster(meet) {
+    const going = meetRsvpRoster(meet.id, 'going');
+    const maybe = meetRsvpRoster(meet.id, 'maybe');
+    const checkedIn = meetCheckedInRoster(meet.id);
+    return `<div class="meet-roster" aria-label="Meet roster">
+      <div class="roster-group">
+        <div class="roster-title"><span>Going</span><span class="roster-pill">${going.length}</span></div>
+        ${renderRosterPeople(going, 'No one going yet')}
+      </div>
+      <div class="roster-group">
+        <div class="roster-title"><span>Maybe</span><span class="roster-pill">${maybe.length}</span></div>
+        ${renderRosterPeople(maybe, 'No maybes yet')}
+      </div>
+      <div class="roster-group">
+        <div class="roster-title"><span>Checked In</span><span class="roster-pill">${checkedIn.length}</span></div>
+        ${renderRosterPeople(checkedIn, 'No one checked in yet')}
+      </div>
+    </div>`;
+  }
+
   function renderMeets() {
     const meets = appData.meets;
     const el = document.getElementById('meets-list');
@@ -2674,7 +2785,9 @@
     const canRsvp = !!currentUserId();
 
     el.innerHTML = sorted.map(m => {
-      const counts = normalizeRsvpCounts(m.rsvp);
+      const checkedInRoster = meetCheckedInRoster(m.id);
+      const checkedInCount = checkedInRoster.length;
+      const myCheckin = currentUserId() && activeCheckins().some(row => row && row.meet_id === m.id && row.user_id === currentUserId());
       const myRsvp = canRsvp ? (m.myRsvp || null) : null;
       const ownsMeet = userOwnsMeet(m);
       const ownerActions = ownsMeet ? `
@@ -2693,12 +2806,8 @@
           <div class="meet-loc">📍 ${esc(m.location)}</div>
           <div class="meet-desc">${esc(m.desc)}</div>
 
-          <!-- RSVP counts -->
-          <div class="rsvp-counts">
-            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--green)"></div>${counts.going} Going</div>
-            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--amber)"></div>${counts.maybe} Maybe</div>
-            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--red)"></div>${counts.not_going} Can't Go</div>
-          </div>
+          <!-- RSVP and check-in counts -->
+          ${renderMeetCounts(m, checkedInCount)}
 
           <!-- RSVP buttons -->
           <div class="rsvp-row">${rsvpButtons}
@@ -2706,10 +2815,11 @@
           ${canRsvp ? '' : '<div class="rsvp-signin-msg">Sign in to RSVP.</div>'}
 
           <!-- Check-In -->
-          <!-- FUTURE: Connect to Supabase to log real check-ins with GPS + timestamp -->
-          <button class="checkin-btn ${m.checkedIn ? 'in' : ''}" onclick="checkIn('${m.id}')">
-            ${m.checkedIn ? '✓ Checked In — You\'re Here!' : '📍 Check In to This Meet'}
+          <button class="checkin-btn ${myCheckin ? 'in' : ''}" onclick="checkIn('${m.id}')">
+            ${myCheckin ? '✓ Checked In — Tap to Check Out' : '📍 Check In to This Meet'}
           </button>
+          ${canRsvp ? '' : '<div class="rsvp-signin-msg" style="margin-top:8px">Sign in to check in.</div>'}
+          ${renderMeetRoster(m)}
         </div>
         ${ownerActions}
       </div>`;
@@ -2908,16 +3018,41 @@
     }
   }
 
-  // Check-in toggle
-  // FUTURE: log real check-in to Supabase with timestamp + GPS coordinates
+  // Meet-card check-in uses the existing Cruise Mode check_ins table.
   async function checkIn(meetId) {
-    const meets = appData.meets;
-    const m = meets.find(x => x.id === meetId);
-    if (!m) return;
-    m.checkedIn = !m.checkedIn;
-    try { await updateRecord('meets', meetId, m); } catch (err) { toast(`Could not save check-in: ${err.message}`); }
-    renderMeets();
-    toast(m.checkedIn ? '📍 You\'re checked in!' : 'Check-in removed');
+    const meet = appData.meets.find(x => x.id === meetId);
+    if (!meet) return;
+    if (!currentUserId()) {
+      promptSignIn('Sign in to check in to this meet.');
+      return;
+    }
+    if (!isSupabaseReady()) {
+      toast('Supabase is required for meet check-ins.');
+      return;
+    }
+
+    const mine = myActiveCheckin();
+    if (mine && mine.meet_id === meetId) {
+      await stopSharing();
+      return;
+    }
+    if (mine) {
+      toast('You already have an active check-in. Check out first to switch meets.');
+      return;
+    }
+
+    const payload = buildCheckinPayload({ locationText: meet.location || meet.title, meetId });
+    try {
+      const { error } = await supabaseClient.from('check_ins').insert([payload]);
+      if (error) throw error;
+      await refreshCheckins(false);
+      renderMeets();
+      renderHome();
+      toast("📍 You're checked in!");
+    } catch (err) {
+      console.error('Could not save meet check-in', err);
+      toast(`Could not save check-in: ${err.message}`);
+    }
   }
 
   // Expose for onclick attributes
@@ -3046,6 +3181,21 @@
     openCheckinForm();
   }
 
+  function buildCheckinPayload({ locationText, note = '', meetId = null }) {
+    const profile = myMemberProfile();
+    const carLabel = profile ? [profile.year, profile.make, profile.model].filter(Boolean).join(' ') : '';
+    return {
+      user_id: currentUserId(),
+      display_name: currentActorName(),
+      car_label: carLabel,
+      location_text: locationText,
+      note,
+      meet_id: meetId,
+      expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      ended_at: null
+    };
+  }
+
   async function saveCheckin() {
     const locationText = document.getElementById('ci-location').value.trim();
     const note = document.getElementById('ci-note').value.trim();
@@ -3053,20 +3203,7 @@
     if (!locationText) { setCheckinStatus('error', 'Location / spot name is required.'); return; }
     if (!currentUserId()) { promptSignIn('Sign in to start Cruise Mode.'); return; }
 
-    const profile = myMemberProfile();
-    const displayName = currentActorName();
-    const carLabel = profile ? [profile.year, profile.make, profile.model].filter(Boolean).join(' ') : '';
-    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
-    const payload = {
-      user_id: currentUserId(),
-      display_name: displayName,
-      car_label: carLabel,
-      location_text: locationText,
-      note,
-      meet_id: meetId,
-      expires_at: expiresAt,
-      ended_at: null
-    };
+    const payload = buildCheckinPayload({ locationText, note, meetId });
 
     try {
       setCheckinSaving(true);
@@ -3082,6 +3219,7 @@
       }
       closeCheckinForm();
       await refreshCheckins(false);
+      renderMeets();
       renderHome();
       toast('📍 Cruise Mode active for 4 hours');
     } catch (err) {
@@ -3110,6 +3248,7 @@
       const { error } = await supabaseClient.from('check_ins').update({ expires_at: stoppedAt, ended_at: stoppedAt, display_name: currentActorName() }).eq('id', mine.id).eq('user_id', currentUserId());
       if (error) throw error;
       await refreshCheckins(false);
+      renderMeets();
       renderHome();
       toast('⏹ Location sharing stopped');
     } catch (err) {
