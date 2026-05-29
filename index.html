@@ -422,6 +422,30 @@
       white-space: nowrap;
     }
     .crew-chip.primary { color: var(--accent); border-color: var(--accent-border); background: var(--accent-lo); }
+    .crew-chip.hidden { display: none; }
+    .crew-modal {
+      position: fixed; inset: 0; z-index: 520;
+      display: none; align-items: flex-end; justify-content: center;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      background: rgba(0,0,0,0.62);
+    }
+    .crew-modal.open { display: flex; }
+    .crew-modal-card {
+      width: min(100%, 440px);
+      background: var(--bg-card);
+      border: 1px solid var(--border2);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+    }
+    .crew-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .crew-modal-title { font-family: var(--f-display); font-size: 1.05rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .crew-modal-sub { color: var(--text-2); font-size: 0.84rem; margin-top: 3px; }
+    .crew-modal-actions { display: grid; gap: 10px; margin-top: 12px; }
+    .invite-code-box { background: rgba(255,255,255,0.04); border: 1px dashed var(--accent-border); border-radius: var(--r-sm); padding: 12px; }
+    .invite-code-label { color: var(--text-3); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+    .invite-code-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 1rem; color: var(--accent-hi); user-select: all; }
+    @media (min-width: 600px) { .crew-modal { align-items: center; } }
     .garage-view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
     .garage-view-toggle .btn-ghost.active { border-color: var(--accent); color: var(--accent); background: var(--accent-lo); }
     @media (min-width: 600px) {
@@ -1073,7 +1097,46 @@
         <option value="">All CruiseCrew</option>
       </select>
       <button class="crew-chip primary" id="crew-create" type="button">New</button>
+      <button class="crew-chip hidden" id="crew-invite" type="button">Invite</button>
+      <button class="crew-chip" id="crew-join" type="button">Join</button>
       <button class="crew-chip" id="crew-clear" type="button">Global</button>
+    </div>
+
+    <div class="crew-modal" id="invite-modal" aria-label="Invite crew" role="dialog" aria-modal="true">
+      <div class="crew-modal-card">
+        <div class="crew-modal-head">
+          <div>
+            <div class="crew-modal-title">Invite Crew</div>
+            <div class="crew-modal-sub" id="invite-crew-name">Select a crew first.</div>
+          </div>
+          <button class="auth-close" id="invite-close" type="button" aria-label="Close invite modal">×</button>
+        </div>
+        <div class="invite-code-box">
+          <div class="invite-code-label">Invite code</div>
+          <div class="invite-code-value" id="invite-code-value">—</div>
+        </div>
+        <div class="crew-modal-actions">
+          <button class="btn-primary" id="copy-invite-link" type="button">Copy Invite Link</button>
+          <button class="btn-ghost" id="copy-invite-code" type="button">Copy Invite Code</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="crew-modal" id="join-modal" aria-label="Join crew" role="dialog" aria-modal="true">
+      <div class="crew-modal-card">
+        <div class="crew-modal-head">
+          <div>
+            <div class="crew-modal-title">Join Crew</div>
+            <div class="crew-modal-sub" id="join-modal-sub">Paste an invite code to join a CruiseCrew.</div>
+          </div>
+          <button class="auth-close" id="join-close" type="button" aria-label="Close join modal">×</button>
+        </div>
+        <input class="form-inp" id="join-code-input" placeholder="Invite code" autocomplete="one-time-code">
+        <div class="crew-modal-actions">
+          <button class="btn-primary" id="join-submit" type="button">Join Crew</button>
+          <button class="btn-ghost" id="join-signin" type="button">Sign In to Join</button>
+        </div>
+      </div>
     </div>
 
     <div class="auth-panel" id="auth-panel" aria-label="Account sign in" role="dialog" aria-modal="true">
@@ -1674,6 +1737,7 @@
     announcements: 'gc_announcements',
     checkins:      'gc_checkins',
     selectedGroup: 'cc_selected_group',
+    pendingInvite: 'cc_pending_invite',
     garageView:    'cc_garage_view',
     seeded:        'gc_seeded'
   };
@@ -1736,7 +1800,8 @@
     rsvps: [],
     expandedMeetRosters: new Set(),
     currentUser: null,
-    currentSession: null
+    currentSession: null,
+    activeInvite: null
   };
 
 
@@ -1757,6 +1822,17 @@
   function selectedGroupLabel() {
     const group = selectedGroup();
     return group ? group.name : 'All CruiseCrew';
+  }
+
+  function myGroupMembership(groupId = selectedGroupId()) {
+    const uid = currentUserId();
+    if (!uid || !groupId) return null;
+    return (appData.groupMemberships || []).find(m => m.group_id === groupId && m.user_id === uid) || null;
+  }
+
+  function canInviteSelectedGroup() {
+    const membership = myGroupMembership();
+    return !!selectedGroupId() && (currentUserIsAdmin() || (membership && ['owner','admin'].includes(membership.role)));
   }
 
   function clearSelectedGroup(reason = '') {
@@ -2217,6 +2293,7 @@
         await loadAllData(false, false);
         if (refreshVersion !== authTransitionVersion) return;
         updateAuthUI();
+        handleInviteFromUrl();
         renderHome();
         renderActiveTab();
         setAuthStatus('success', message);
@@ -2421,6 +2498,141 @@
     }).join('');
     select.innerHTML = `<option value="">All CruiseCrew</option>${options}`;
     select.value = selectedGroupId();
+    const inviteBtn = document.getElementById('crew-invite');
+    if (inviteBtn) inviteBtn.classList.toggle('hidden', !canInviteSelectedGroup());
+  }
+
+  function normalizeInviteCode(code) {
+    return String(code || '').trim().replace(/^.*[?&]invite=/, '').split('&')[0].trim().toUpperCase();
+  }
+
+  function generateInviteCode() {
+    const bytes = new Uint8Array(8);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('').slice(0, 12).toUpperCase();
+  }
+
+  function inviteLink(code) {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('invite', code);
+    return url.toString();
+  }
+
+  async function copyText(text, label) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = text;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      toast(`${label} copied`);
+    } catch (err) {
+      console.error('Copy failed', err);
+      toast(`Copy failed. Long-press to copy: ${text}`);
+    }
+  }
+
+  function openInviteModal(invite) {
+    appData.activeInvite = invite;
+    document.getElementById('invite-crew-name').textContent = selectedGroupLabel();
+    document.getElementById('invite-code-value').textContent = invite.code;
+    document.getElementById('invite-modal').classList.add('open');
+  }
+
+  function closeInviteModal() {
+    document.getElementById('invite-modal').classList.remove('open');
+  }
+
+  function openJoinModal(code = '', message = 'Paste an invite code to join a CruiseCrew.') {
+    document.getElementById('join-code-input').value = normalizeInviteCode(code);
+    document.getElementById('join-modal-sub').textContent = message;
+    document.getElementById('join-signin').style.display = currentUserId() ? 'none' : 'block';
+    document.getElementById('join-submit').style.display = currentUserId() ? 'block' : 'none';
+    document.getElementById('join-modal').classList.add('open');
+    setTimeout(() => document.getElementById('join-code-input').focus(), 50);
+  }
+
+  function closeJoinModal() {
+    document.getElementById('join-modal').classList.remove('open');
+  }
+
+  async function createInviteForSelectedGroup() {
+    if (!currentUserId()) { promptSignIn('Sign in to invite crew members.'); return; }
+    if (!selectedGroupId()) { toast('Select a crew first.'); return; }
+    if (!canInviteSelectedGroup()) { toast('Only crew owners/admins can create invite codes.'); return; }
+    const payload = { group_id: selectedGroupId(), code: generateInviteCode(), created_by: currentUserId() };
+    try {
+      const { data, error } = await supabaseClient
+        .from('group_invites')
+        .insert([payload])
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Supabase create group invite failed', { error, payload });
+        throw error;
+      }
+      openInviteModal(data);
+      toast('Invite code ready');
+    } catch (err) {
+      console.error('Could not create invite', err);
+      toast(`Could not create invite: ${err.message}`);
+    }
+  }
+
+  async function redeemInvite(code) {
+    const inviteCode = normalizeInviteCode(code);
+    if (!inviteCode) { toast('Enter an invite code.'); return; }
+    if (!currentUserId()) {
+      localStorage.setItem(LS.pendingInvite, inviteCode);
+      openJoinModal(inviteCode, 'Sign in to join this crew. Your invite code is saved.');
+      promptSignIn('Sign in to join this crew.');
+      return;
+    }
+    try {
+      const { data, error } = await supabaseClient.rpc('redeem_group_invite', { invite_code: inviteCode });
+      if (error) {
+        console.error('Supabase redeem invite failed', { error, inviteCode });
+        throw error;
+      }
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result || !result.group_id) throw new Error('Invite did not return a crew.');
+      await loadGroups(false);
+      appData.selectedGroupId = result.group_id;
+      localStorage.setItem(LS.selectedGroup, result.group_id);
+      localStorage.removeItem(LS.pendingInvite);
+      if (new URLSearchParams(window.location.search).get('invite')) {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      }
+      closeJoinModal();
+      renderGroupSwitcher();
+      renderHome();
+      renderActiveTab();
+      toast(result.already_member ? 'You’re already in this crew' : `Joined ${result.group_name || 'crew'} 🎉`);
+    } catch (err) {
+      console.error('Could not join crew by invite', err);
+      toast(`Could not join crew: ${err.message}`);
+    }
+  }
+
+  function handleInviteFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const code = normalizeInviteCode(params.get('invite') || localStorage.getItem(LS.pendingInvite) || '');
+    if (!code) return;
+    localStorage.setItem(LS.pendingInvite, code);
+    if (currentUserId()) openJoinModal(code, 'Invite code detected. Tap Join Crew to continue.');
+    else openJoinModal(code, 'Invite code detected. Sign in to join this crew.');
   }
 
   async function createGroup() {
@@ -2737,7 +2949,21 @@
 
   document.getElementById('crew-select').addEventListener('change', event => selectGroup(event.target.value));
   document.getElementById('crew-create').addEventListener('click', createGroup);
+  document.getElementById('crew-invite').addEventListener('click', createInviteForSelectedGroup);
+  document.getElementById('crew-join').addEventListener('click', () => openJoinModal());
   document.getElementById('crew-clear').addEventListener('click', () => selectGroup(''));
+  document.getElementById('invite-close').addEventListener('click', closeInviteModal);
+  document.getElementById('invite-modal').addEventListener('click', event => { if (event.target.id === 'invite-modal') closeInviteModal(); });
+  document.getElementById('copy-invite-link').addEventListener('click', () => appData.activeInvite && copyText(inviteLink(appData.activeInvite.code), 'Invite link'));
+  document.getElementById('copy-invite-code').addEventListener('click', () => appData.activeInvite && copyText(appData.activeInvite.code, 'Invite code'));
+  document.getElementById('join-close').addEventListener('click', closeJoinModal);
+  document.getElementById('join-modal').addEventListener('click', event => { if (event.target.id === 'join-modal') closeJoinModal(); });
+  document.getElementById('join-submit').addEventListener('click', () => redeemInvite(document.getElementById('join-code-input').value));
+  document.getElementById('join-signin').addEventListener('click', () => {
+    const code = normalizeInviteCode(document.getElementById('join-code-input').value);
+    if (code) localStorage.setItem(LS.pendingInvite, code);
+    promptSignIn('Sign in to join this crew.');
+  });
   document.getElementById('garage-crew-view').addEventListener('click', () => {
     appData.garageView = 'crew';
     localStorage.setItem(LS.garageView, 'crew');
@@ -4082,6 +4308,7 @@
       renderHome();
       renderActiveTab();
       setAuthStatus(currentUserId() ? 'success' : '', currentUserId() ? 'Signed in.' : 'Sign in to manage your garage profile.');
+      handleInviteFromUrl();
     } catch (err) {
       console.error('refresh failed', err);
       updateAuthUI();
