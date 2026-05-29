@@ -902,7 +902,14 @@
       color: var(--accent); letter-spacing: 0.05em; text-transform: uppercase;
       margin-bottom: 5px;
     }
-    .photo-cap  { font-size: 0.84rem; color: var(--text); line-height: 1.4; margin-bottom: 8px; }
+    .photo-cap  {
+      font-size: 0.82rem; color: var(--text); line-height: 1.35;
+      margin: 0 0 8px; padding: 6px 8px;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      border-radius: 10px;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
     .photo-meta {
       font-size: 0.72rem; color: var(--text-3); line-height: 1.45;
       display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
@@ -3375,6 +3382,10 @@
     return spot || 'General crew photo';
   }
 
+  function photoCaption(photo) {
+    return String(photo && (photo.caption || photo.captionText || photo.caption_text || '') || '').trim();
+  }
+
   function photoMember(photo) {
     if (!photo) return null;
     if (photo.member_id || photo.memberId) {
@@ -3421,14 +3432,15 @@
     grid.innerHTML = photos.map(p => {
       const imageUrl = p.imageUrl || p.image_url || p.url || '';
       const context = photoDropContext(p);
+      const caption = photoCaption(p);
       const postedAt = activityDate(p, p.date);
       const vehicle = photoVehicleInfo(p);
       return `
         <div class="photo-card">
-          ${imageUrl ? `<img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(p.caption || `Photo from ${context}`)}" loading="lazy" onerror="this.replaceWith(photoFallback())">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
+          ${imageUrl ? `<img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(caption || `Photo from ${context}`)}" loading="lazy" onerror="this.replaceWith(photoFallback())">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
           <div class="photo-info">
             <div class="photo-meet">${esc(context)}</div>
-            ${p.caption ? `<div class="photo-cap">${esc(p.caption)}</div>` : ''}
+            ${caption ? `<div class="photo-cap">${esc(caption)}</div>` : ''}
             <div class="photo-meta">
               <div class="photo-meta-main">
                 <div class="photo-author">${esc(photoPosterName(p))}</div>
