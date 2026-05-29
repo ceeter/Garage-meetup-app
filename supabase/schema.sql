@@ -42,6 +42,19 @@ create table if not exists public.meet_rsvps (
   unique(meet_id, user_id)
 );
 
+
+create table if not exists public.check_ins (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  display_name text,
+  car_label text,
+  location_text text,
+  note text,
+  meet_id uuid references public.meets(id) on delete set null,
+  created_at timestamp with time zone default now(),
+  expires_at timestamp with time zone default now() + interval '4 hours'
+);
+
 create table if not exists public.photo_drops (
   id uuid primary key default gen_random_uuid(),
   url text default '',
@@ -67,6 +80,16 @@ create table if not exists public.announcements (
 alter table public.members add column if not exists user_id uuid unique references auth.users(id) on delete cascade;
 alter table public.members add column if not exists updated_at timestamptz not null default now();
 alter table public.meets add column if not exists created_by uuid references auth.users(id) on delete set null;
+alter table public.check_ins add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.check_ins add column if not exists display_name text;
+alter table public.check_ins add column if not exists car_label text;
+alter table public.check_ins add column if not exists location_text text;
+alter table public.check_ins add column if not exists note text;
+alter table public.check_ins add column if not exists meet_id uuid references public.meets(id) on delete set null;
+alter table public.check_ins add column if not exists created_at timestamp with time zone default now();
+alter table public.check_ins add column if not exists expires_at timestamp with time zone default now() + interval '4 hours';
+create index if not exists check_ins_expires_at_idx on public.check_ins(expires_at);
+create index if not exists check_ins_user_id_idx on public.check_ins(user_id);
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
 
 create or replace function public.set_member_user_id()
@@ -91,6 +114,7 @@ create trigger set_member_user_id
 alter table public.members enable row level security;
 alter table public.meets enable row level security;
 alter table public.meet_rsvps enable row level security;
+alter table public.check_ins enable row level security;
 alter table public.photo_drops enable row level security;
 alter table public.announcements enable row level security;
 
@@ -129,6 +153,22 @@ create policy "users can insert own meet rsvp" on public.meet_rsvps
 create policy "users can update own meet rsvp" on public.meet_rsvps
   for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "users can delete own meet rsvp" on public.meet_rsvps
+  for delete to authenticated using (auth.uid() = user_id);
+
+
+-- Check-in policy: signed-in users can see active check-ins and only manage their own row.
+drop policy if exists "authenticated can read active check ins" on public.check_ins;
+drop policy if exists "users can insert own check in" on public.check_ins;
+drop policy if exists "users can update own check in" on public.check_ins;
+drop policy if exists "users can delete own check in" on public.check_ins;
+
+create policy "authenticated can read active check ins" on public.check_ins
+  for select to authenticated using (expires_at > now());
+create policy "users can insert own check in" on public.check_ins
+  for insert to authenticated with check (auth.uid() = user_id);
+create policy "users can update own check in" on public.check_ins
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "users can delete own check in" on public.check_ins
   for delete to authenticated using (auth.uid() = user_id);
 
 -- Meets are publicly readable, but signed-in users can only create or manage their own meet rows.
