@@ -432,16 +432,35 @@
     .crew-modal.open { display: flex; }
     .crew-modal-card {
       width: min(100%, 440px);
+      max-height: min(86dvh, 720px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       background: var(--bg-card);
       border: 1px solid var(--border2);
       border-radius: 18px;
       padding: 16px;
       box-shadow: 0 18px 48px rgba(0,0,0,0.55);
     }
+    .crew-modal-card.wide { width: min(100%, 560px); }
     .crew-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
     .crew-modal-title { font-family: var(--f-display); font-size: 1.05rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
     .crew-modal-sub { color: var(--text-2); font-size: 0.84rem; margin-top: 3px; }
     .crew-modal-actions { display: grid; gap: 10px; margin-top: 12px; }
+    .crew-settings-block { display: grid; gap: 12px; }
+    .crew-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .crew-settings-check { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 0.84rem; min-height: 44px; }
+    .crew-settings-check input { width: 20px; height: 20px; accent-color: var(--accent); }
+    .crew-member-list { display: grid; gap: 10px; margin-top: 10px; }
+    .crew-member-item { background: rgba(255,255,255,0.035); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; display: grid; gap: 10px; }
+    .crew-member-main { min-width: 0; }
+    .crew-member-name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+    .crew-member-meta { color: var(--text-3); font-size: 0.76rem; margin-top: 2px; }
+    .crew-role-pill { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; padding: 3px 9px; background: var(--accent-lo); border: 1px solid var(--accent-border); color: var(--accent-hi); font-family: var(--f-display); font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .crew-member-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .crew-member-actions button { flex: 1 1 120px; }
+    .crew-settings-status { min-height: 20px; font-size: 0.8rem; color: var(--text-2); }
+    .crew-settings-status.error { color: var(--red); }
+    .crew-settings-status.success { color: var(--green); }
     .invite-code-box { background: rgba(255,255,255,0.04); border: 1px dashed var(--accent-border); border-radius: var(--r-sm); padding: 12px; }
     .invite-code-label { color: var(--text-3); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
     .invite-code-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 1rem; color: var(--accent-hi); user-select: all; }
@@ -1097,6 +1116,7 @@
         <option value="">All CruiseCrew</option>
       </select>
       <button class="crew-chip primary" id="crew-create" type="button">New</button>
+      <button class="crew-chip hidden" id="crew-settings" type="button">Manage</button>
       <button class="crew-chip hidden" id="crew-invite" type="button">Invite</button>
       <button class="crew-chip" id="crew-join" type="button">Join</button>
       <button class="crew-chip" id="crew-clear" type="button">Global</button>
@@ -1136,6 +1156,42 @@
           <button class="btn-primary" id="join-submit" type="button">Join Crew</button>
           <button class="btn-ghost" id="join-signin" type="button">Sign In to Join</button>
         </div>
+      </div>
+    </div>
+
+    <div class="crew-modal" id="crew-settings-modal" aria-label="Manage crew" role="dialog" aria-modal="true">
+      <div class="crew-modal-card wide">
+        <div class="crew-modal-head">
+          <div>
+            <div class="crew-modal-title">Manage Crew</div>
+            <div class="crew-modal-sub" id="crew-settings-sub">Edit crew details and members.</div>
+          </div>
+          <button class="auth-close" id="crew-settings-close" type="button" aria-label="Close crew settings">×</button>
+        </div>
+
+        <div class="crew-settings-block">
+          <div class="form-grp">
+            <label class="form-lbl" for="crew-settings-name">Crew Name *</label>
+            <input class="form-inp" id="crew-settings-name" maxlength="120" placeholder="Crew name">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl" for="crew-settings-description">Description</label>
+            <textarea class="form-inp" id="crew-settings-description" rows="3" placeholder="What is this crew about?"></textarea>
+          </div>
+          <label class="crew-settings-check" for="crew-settings-public">
+            <input type="checkbox" id="crew-settings-public">
+            Public crew discovery
+          </label>
+          <div class="crew-modal-actions">
+            <button class="btn-primary" id="crew-settings-save" type="button">Save Crew Details</button>
+          </div>
+          <div class="crew-settings-status" id="crew-settings-status" role="status" aria-live="polite"></div>
+        </div>
+
+        <div class="sec-hdr" style="margin-top:18px">
+          <div class="sec-title">Members</div>
+        </div>
+        <div class="crew-member-list" id="crew-settings-members"></div>
       </div>
     </div>
 
@@ -1801,7 +1857,8 @@
     expandedMeetRosters: new Set(),
     currentUser: null,
     currentSession: null,
-    activeInvite: null
+    activeInvite: null,
+    crewSettingsBusy: false
   };
 
 
@@ -1833,6 +1890,26 @@
   function canInviteSelectedGroup() {
     const membership = myGroupMembership();
     return !!selectedGroupId() && (currentUserIsAdmin() || (membership && ['owner','admin'].includes(membership.role)));
+  }
+
+  function canManageSelectedGroup() {
+    return canInviteSelectedGroup();
+  }
+
+  function selectedGroupOwnerId() {
+    const group = selectedGroup();
+    return group ? group.owner_id : null;
+  }
+
+  function isGroupOwnerMembership(membership) {
+    return !!membership && (membership.role === 'owner' || membership.user_id === selectedGroupOwnerId());
+  }
+
+  function memberDisplayName(userId) {
+    const profile = (appData.members || []).find(m => m.user_id === userId);
+    if (profile && profile.name) return profile.name;
+    if (userId === currentUserId() && currentUserEmail()) return currentUserEmail();
+    return `Member ${String(userId || '').slice(0, 8) || 'unknown'}`;
   }
 
   function clearSelectedGroup(reason = '') {
@@ -2228,6 +2305,8 @@
       addAnnBtn.setAttribute('aria-label', addAnnBtn.title);
     }
 
+    if (!canManageSelectedGroup()) closeCrewSettings();
+
     if (!isAdmin) {
       document.getElementById('add-meet-form').classList.remove('open');
       document.getElementById('add-ann-form').classList.remove('open');
@@ -2477,6 +2556,7 @@
       if (selectedGroupId() && !appData.groups.some(g => g.id === selectedGroupId())) {
         clearSelectedGroup('stored crew id was not returned by Supabase');
       }
+      if (!canManageSelectedGroup()) closeCrewSettings();
       renderGroupSwitcher();
       return appData.groups;
     } catch (err) {
@@ -2500,6 +2580,8 @@
     select.value = selectedGroupId();
     const inviteBtn = document.getElementById('crew-invite');
     if (inviteBtn) inviteBtn.classList.toggle('hidden', !canInviteSelectedGroup());
+    const settingsBtn = document.getElementById('crew-settings');
+    if (settingsBtn) settingsBtn.classList.toggle('hidden', !canManageSelectedGroup());
   }
 
   function normalizeInviteCode(code) {
@@ -2566,6 +2648,159 @@
 
   function closeJoinModal() {
     document.getElementById('join-modal').classList.remove('open');
+  }
+
+  function setCrewSettingsStatus(kind, message) {
+    const el = document.getElementById('crew-settings-status');
+    if (!el) return;
+    el.className = `crew-settings-status ${kind || ''}`.trim();
+    el.textContent = message || '';
+  }
+
+  function openCrewSettings() {
+    if (!selectedGroupId()) { toast('Select a crew first.'); return; }
+    if (!canManageSelectedGroup()) { toast('Only crew owners/admins can manage crew settings.'); return; }
+    const group = selectedGroup();
+    if (!group) { toast('Selected crew is not available.'); return; }
+    document.getElementById('crew-settings-sub').textContent = group.name || 'Manage crew';
+    document.getElementById('crew-settings-name').value = group.name || '';
+    document.getElementById('crew-settings-description').value = group.description || '';
+    document.getElementById('crew-settings-public').checked = group.is_public !== false;
+    setCrewSettingsStatus('', '');
+    renderCrewSettingsMembers();
+    document.getElementById('crew-settings-modal').classList.add('open');
+    setTimeout(() => document.getElementById('crew-settings-name').focus(), 50);
+  }
+
+  function closeCrewSettings() {
+    document.getElementById('crew-settings-modal').classList.remove('open');
+  }
+
+  function renderCrewSettingsMembers(message = '') {
+    const el = document.getElementById('crew-settings-members');
+    if (!el) return;
+    if (!selectedGroupId()) {
+      el.innerHTML = '<div class="empty"><div class="empty-title">No Crew Selected</div></div>';
+      return;
+    }
+    if (!canManageSelectedGroup()) {
+      el.innerHTML = '<div class="empty"><div class="empty-title">Admin Only</div><div class="empty-sub">Only crew owners/admins can manage members.</div></div>';
+      return;
+    }
+    const memberships = (appData.groupMemberships || [])
+      .filter(m => m.group_id === selectedGroupId())
+      .sort((a, b) => roleRank(a.role) - roleRank(b.role) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    if (!memberships.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-title">No Members Found</div><div class="empty-sub">Memberships could not be loaded for this crew.</div></div>';
+      return;
+    }
+    const ownerId = selectedGroupOwnerId();
+    el.innerHTML = memberships.map(m => {
+      const isOwner = m.role === 'owner' || m.user_id === ownerId;
+      const role = isOwner ? 'owner' : (m.role || 'member');
+      const joined = m.created_at ? fmtDate(String(m.created_at).slice(0, 10)) : 'Joined date unavailable';
+      const isSelf = m.user_id === currentUserId();
+      const actionButtons = memberActionButtons(m, role, isOwner, isSelf);
+      return `<div class="crew-member-item" data-user-id="${esc(m.user_id)}">
+        <div class="crew-settings-row">
+          <div class="crew-member-main">
+            <div class="crew-member-name">${esc(memberDisplayName(m.user_id))}${isSelf ? ' <span style="color:var(--text-3);font-weight:500">(you)</span>' : ''}</div>
+            <div class="crew-member-meta">${esc(joined)} · ${esc(String(m.user_id || '').slice(0, 8))}</div>
+          </div>
+          <span class="crew-role-pill">${esc(role)}</span>
+        </div>
+        ${actionButtons ? `<div class="crew-member-actions">${actionButtons}</div>` : '<div class="crew-member-meta">Owner is protected.</div>'}
+      </div>`;
+    }).join('');
+    if (message) setCrewSettingsStatus('success', message);
+  }
+
+  function roleRank(role) {
+    return ({ owner: 0, admin: 1, member: 2 })[role] ?? 3;
+  }
+
+  function memberActionButtons(membership, role, isOwner, isSelf) {
+    if (isOwner) return '';
+    const disabled = appData.crewSettingsBusy ? ' disabled' : '';
+    const promote = role === 'member'
+      ? `<button class="btn-ghost" type="button" data-crew-action="promote" data-user-id="${esc(membership.user_id)}"${disabled}>Promote</button>` : '';
+    const demote = role === 'admin'
+      ? `<button class="btn-ghost" type="button" data-crew-action="demote" data-user-id="${esc(membership.user_id)}"${disabled}>Demote</button>` : '';
+    const remove = `<button class="btn-del" type="button" data-crew-action="remove" data-user-id="${esc(membership.user_id)}"${disabled}>Remove</button>`;
+    return `${promote}${demote}${remove}`;
+  }
+
+  async function saveCrewSettings() {
+    if (!selectedGroupId() || !canManageSelectedGroup()) { toast('Only crew owners/admins can update crew settings.'); return; }
+    const name = document.getElementById('crew-settings-name').value.trim();
+    if (!name) { toast('Crew name is required.'); return; }
+    const patch = {
+      name,
+      description: document.getElementById('crew-settings-description').value.trim(),
+      is_public: document.getElementById('crew-settings-public').checked,
+      updated_at: new Date().toISOString()
+    };
+    try {
+      setCrewSettingsStatus('', 'Saving crew details...');
+      const { data, error } = await supabaseClient
+        .from('groups')
+        .update(patch)
+        .eq('id', selectedGroupId())
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Supabase update crew failed', { error, patch, groupId: selectedGroupId() });
+        throw error;
+      }
+      const idx = appData.groups.findIndex(g => g.id === selectedGroupId());
+      if (idx > -1) appData.groups[idx] = data;
+      renderGroupSwitcher();
+      renderHome();
+      renderActiveTab();
+      setCrewSettingsStatus('success', 'Crew details saved.');
+      toast('Crew details saved ✓');
+    } catch (err) {
+      console.error('Could not update crew settings', err);
+      setCrewSettingsStatus('error', `Could not save crew: ${err.message}`);
+      toast(`Could not save crew: ${err.message}`);
+    }
+  }
+
+  async function manageCrewMember(action, targetUserId) {
+    if (!selectedGroupId() || !targetUserId) return;
+    if (!canManageSelectedGroup()) { toast('Only crew owners/admins can manage members.'); return; }
+    const membership = (appData.groupMemberships || []).find(m => m.group_id === selectedGroupId() && m.user_id === targetUserId);
+    if (!membership) { toast('Member is no longer in this crew.'); return; }
+    if (isGroupOwnerMembership(membership)) { toast('The crew owner cannot be removed or demoted.'); return; }
+    const label = memberDisplayName(targetUserId);
+    if (action === 'remove' && !confirm(`Remove ${label} from this crew?`)) return;
+    const rpcName = action === 'remove' ? 'remove_group_member' : 'update_group_member_role';
+    const args = action === 'remove'
+      ? { target_group_id: selectedGroupId(), target_user_id: targetUserId }
+      : { target_group_id: selectedGroupId(), target_user_id: targetUserId, new_role: action === 'promote' ? 'admin' : 'member' };
+    try {
+      appData.crewSettingsBusy = true;
+      renderCrewSettingsMembers();
+      setCrewSettingsStatus('', 'Updating member...');
+      const { error } = await supabaseClient.rpc(rpcName, args);
+      if (error) {
+        console.error('Supabase crew member RPC failed', { error, rpcName, args });
+        throw error;
+      }
+      await loadGroups(false);
+      renderCrewSettingsMembers(action === 'remove' ? 'Member removed.' : 'Member role updated.');
+      renderHome();
+      renderActiveTab();
+      toast(action === 'remove' ? 'Member removed' : 'Member role updated');
+    } catch (err) {
+      console.error('Could not manage crew member', err);
+      setCrewSettingsStatus('error', `Could not update member: ${err.message}`);
+      toast(`Could not update member: ${err.message}`);
+      renderCrewSettingsMembers();
+    } finally {
+      appData.crewSettingsBusy = false;
+      renderCrewSettingsMembers();
+    }
   }
 
   async function createInviteForSelectedGroup() {
@@ -2949,6 +3184,7 @@
 
   document.getElementById('crew-select').addEventListener('change', event => selectGroup(event.target.value));
   document.getElementById('crew-create').addEventListener('click', createGroup);
+  document.getElementById('crew-settings').addEventListener('click', openCrewSettings);
   document.getElementById('crew-invite').addEventListener('click', createInviteForSelectedGroup);
   document.getElementById('crew-join').addEventListener('click', () => openJoinModal());
   document.getElementById('crew-clear').addEventListener('click', () => selectGroup(''));
@@ -2958,6 +3194,14 @@
   document.getElementById('copy-invite-code').addEventListener('click', () => appData.activeInvite && copyText(appData.activeInvite.code, 'Invite code'));
   document.getElementById('join-close').addEventListener('click', closeJoinModal);
   document.getElementById('join-modal').addEventListener('click', event => { if (event.target.id === 'join-modal') closeJoinModal(); });
+  document.getElementById('crew-settings-close').addEventListener('click', closeCrewSettings);
+  document.getElementById('crew-settings-modal').addEventListener('click', event => { if (event.target.id === 'crew-settings-modal') closeCrewSettings(); });
+  document.getElementById('crew-settings-save').addEventListener('click', saveCrewSettings);
+  document.getElementById('crew-settings-members').addEventListener('click', event => {
+    const btn = event.target.closest('[data-crew-action]');
+    if (!btn) return;
+    manageCrewMember(btn.dataset.crewAction, btn.dataset.userId);
+  });
   document.getElementById('join-submit').addEventListener('click', () => redeemInvite(document.getElementById('join-code-input').value));
   document.getElementById('join-signin').addEventListener('click', () => {
     const code = normalizeInviteCode(document.getElementById('join-code-input').value);
