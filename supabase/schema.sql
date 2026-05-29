@@ -30,6 +30,17 @@ create table if not exists public.meets (
   created_at timestamptz not null default now()
 );
 
+
+create table if not exists public.meet_rsvps (
+  id uuid primary key default gen_random_uuid(),
+  meet_id uuid references public.meets(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  status text not null check (status in ('going', 'maybe', 'not_going')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(meet_id, user_id)
+);
+
 create table if not exists public.photo_drops (
   id uuid primary key default gen_random_uuid(),
   url text default '',
@@ -77,6 +88,7 @@ create trigger set_member_user_id
 
 alter table public.members enable row level security;
 alter table public.meets enable row level security;
+alter table public.meet_rsvps enable row level security;
 alter table public.photo_drops enable row level security;
 alter table public.announcements enable row level security;
 
@@ -99,6 +111,22 @@ create policy "users can insert own member profile" on public.members
 create policy "users can update own member profile" on public.members
   for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "users can delete own member profile" on public.members
+  for delete to authenticated using (auth.uid() = user_id);
+
+
+-- Meet RSVP policy: signed-in users can read RSVP totals and manage only their own RSVP row.
+drop policy if exists "authenticated can read meet rsvps" on public.meet_rsvps;
+drop policy if exists "users can insert own meet rsvp" on public.meet_rsvps;
+drop policy if exists "users can update own meet rsvp" on public.meet_rsvps;
+drop policy if exists "users can delete own meet rsvp" on public.meet_rsvps;
+
+create policy "authenticated can read meet rsvps" on public.meet_rsvps
+  for select to authenticated using (true);
+create policy "users can insert own meet rsvp" on public.meet_rsvps
+  for insert to authenticated with check (auth.uid() = user_id);
+create policy "users can update own meet rsvp" on public.meet_rsvps
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "users can delete own meet rsvp" on public.meet_rsvps
   for delete to authenticated using (auth.uid() = user_id);
 
 -- Private friend-group MVP policy for shared non-profile tables: anyone with the anon key can read/write.
