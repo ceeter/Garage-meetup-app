@@ -59,13 +59,13 @@ create table if not exists public.check_ins (
 
 create table if not exists public.photo_drops (
   id uuid primary key default gen_random_uuid(),
-  url text default '',
-  emoji text default '📸',
-  caption text not null,
-  author text not null,
-  car text default 'Unknown',
-  date date not null default current_date,
-  wide boolean not null default false,
+  meet_id uuid references public.meets(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  member_id uuid references public.members(id) on delete set null,
+  image_url text not null,
+  caption text default '',
+  display_name text default '',
+  car_label text default '',
   created_at timestamptz not null default now()
 );
 
@@ -90,10 +90,42 @@ alter table public.check_ins add column if not exists note text;
 alter table public.check_ins add column if not exists meet_id uuid references public.meets(id) on delete set null;
 alter table public.check_ins add column if not exists created_at timestamp with time zone default now();
 alter table public.meet_rsvps add column if not exists display_name text;
+alter table public.photo_drops add column if not exists meet_id uuid references public.meets(id) on delete cascade;
+alter table public.photo_drops add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.photo_drops add column if not exists member_id uuid references public.members(id) on delete set null;
+alter table public.photo_drops add column if not exists image_url text;
+alter table public.photo_drops add column if not exists caption text default '';
+alter table public.photo_drops add column if not exists display_name text default '';
+alter table public.photo_drops add column if not exists car_label text default '';
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'photo_drops' and column_name = 'url'
+  ) then
+    execute 'update public.photo_drops set image_url = coalesce(nullif(image_url, ''''), url, '''') where image_url is null';
+  else
+    update public.photo_drops set image_url = '' where image_url is null;
+  end if;
+end $$;
+alter table public.photo_drops alter column image_url set default '';
+alter table public.photo_drops alter column image_url set not null;
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'photo_drops' and column_name = 'author'
+  ) then
+    alter table public.photo_drops alter column author set default '';
+  end if;
+end $$;
 alter table public.check_ins add column if not exists expires_at timestamp with time zone default now() + interval '4 hours';
 alter table public.check_ins add column if not exists ended_at timestamp with time zone;
 create index if not exists check_ins_expires_at_idx on public.check_ins(expires_at);
 create index if not exists check_ins_user_id_idx on public.check_ins(user_id);
+create index if not exists photo_drops_meet_id_idx on public.photo_drops(meet_id);
+create index if not exists photo_drops_user_id_idx on public.photo_drops(user_id);
+create index if not exists photo_drops_created_at_idx on public.photo_drops(created_at desc);
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
 
 create or replace function public.set_member_user_id()
@@ -199,10 +231,24 @@ create policy "users can update own meet" on public.meets
 create policy "users can delete own meet" on public.meets
   for delete to authenticated using (auth.uid() = created_by);
 
-create policy "anon can read photo drops" on public.photo_drops for select to anon, authenticated using (true);
-create policy "anon can insert photo drops" on public.photo_drops for insert to anon, authenticated with check (true);
-create policy "anon can update photo drops" on public.photo_drops for update to anon, authenticated using (true) with check (true);
-create policy "anon can delete photo drops" on public.photo_drops for delete to anon, authenticated using (true);
+-- Photo drops are public to view, but only signed-in users can create or manage their own drops.
+drop policy if exists "anon can read photo drops" on public.photo_drops;
+drop policy if exists "anon can insert photo drops" on public.photo_drops;
+drop policy if exists "anon can update photo drops" on public.photo_drops;
+drop policy if exists "anon can delete photo drops" on public.photo_drops;
+drop policy if exists "anon and authenticated can read photo drops" on public.photo_drops;
+drop policy if exists "users can insert own photo drops" on public.photo_drops;
+drop policy if exists "users can update own photo drops" on public.photo_drops;
+drop policy if exists "users can delete own photo drops" on public.photo_drops;
+
+create policy "anon and authenticated can read photo drops" on public.photo_drops
+  for select to anon, authenticated using (true);
+create policy "users can insert own photo drops" on public.photo_drops
+  for insert to authenticated with check (auth.uid() = user_id);
+create policy "users can update own photo drops" on public.photo_drops
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "users can delete own photo drops" on public.photo_drops
+  for delete to authenticated using (auth.uid() = user_id);
 
 create policy "anon can read announcements" on public.announcements for select to anon, authenticated using (true);
 create policy "anon can insert announcements" on public.announcements for insert to anon, authenticated with check (true);

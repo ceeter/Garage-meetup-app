@@ -875,8 +875,8 @@
        PHOTO DROPS
        ============================================================ */
     .photo-grid {
-      display: grid; grid-template-columns: repeat(2,1fr);
-      gap: 10px; margin-bottom: 16px;
+      display: grid; grid-template-columns: 1fr;
+      gap: 12px; margin-bottom: 16px;
     }
     .photo-card {
       background: var(--bg-card);
@@ -885,23 +885,31 @@
       overflow: hidden;
       transition: border-color 0.18s, transform 0.18s;
     }
-    .photo-card:hover { border-color: var(--border2); transform: scale(1.015); }
-    .photo-card.wide { grid-column: 1 / -1; }
+    .photo-card:hover { border-color: var(--border2); transform: translateY(-1px); }
     .photo-thumb {
       width: 100%; aspect-ratio: 4/3;
       background: linear-gradient(135deg, #181820 0%, #0E0E14 100%);
+      object-fit: cover;
+      border-bottom: 1px solid var(--border);
+    }
+    div.photo-thumb {
       display: flex; align-items: center; justify-content: center;
       font-size: 2.2rem; color: var(--text-3);
-      background-size: cover; background-position: center;
     }
-    .photo-card.wide .photo-thumb { aspect-ratio: 16/9; font-size: 3.5rem; }
-    .photo-info { padding: 9px 10px; }
-    .photo-cap  { font-size: 0.78rem; color: var(--text); line-height: 1.4; }
+    .photo-info { padding: 10px 12px 12px; }
+    .photo-meet {
+      font-family: var(--f-display); font-size: 0.78rem; font-weight: 700;
+      color: var(--accent); letter-spacing: 0.05em; text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .photo-cap  { font-size: 0.84rem; color: var(--text); line-height: 1.4; margin-bottom: 8px; }
     .photo-meta {
-      font-family: var(--f-display); font-size: 0.66rem; font-weight: 600;
-      color: var(--text-3); letter-spacing: 0.04em; margin-top: 4px;
-      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.72rem; color: var(--text-3); line-height: 1.45;
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
     }
+    .photo-meta-main { min-width: 0; }
+    .photo-author { color: var(--text-2); font-weight: 600; }
+    .photo-car { color: var(--text-3); }
     .photo-del {
       background: none; border: none; cursor: pointer;
       color: var(--red); font-size: 0.72rem; opacity: 0.5;
@@ -1330,22 +1338,16 @@
         <div class="form-title">Drop a Photo</div>
         <div class="form-grid">
           <div class="form-grp">
-            <label class="form-lbl">Photo URL (optional)</label>
-            <input type="url" class="form-inp" id="ph-url" placeholder="https://...jpg — or leave blank for placeholder">
+            <label class="form-lbl">Meet *</label>
+            <select class="form-inp" id="ph-meet"></select>
           </div>
           <div class="form-grp">
-            <label class="form-lbl">Caption *</label>
-            <input type="text" class="form-inp" id="ph-cap" placeholder="e.g. Friday night vibes 🔥">
+            <label class="form-lbl">Photo URL *</label>
+            <input type="url" class="form-inp" id="ph-url" placeholder="https://...jpg">
           </div>
-          <div class="form-2col">
-            <div class="form-grp">
-              <label class="form-lbl">Your Name *</label>
-              <input type="text" class="form-inp" id="ph-author" placeholder="e.g. Jake">
-            </div>
-            <div class="form-grp">
-              <label class="form-lbl">Car</label>
-              <input type="text" class="form-inp" id="ph-car" placeholder="e.g. 04 STI">
-            </div>
+          <div class="form-grp">
+            <label class="form-lbl">Caption</label>
+            <input type="text" class="form-inp" id="ph-cap" placeholder="e.g. Friday night vibes 🔥">
           </div>
         </div>
         <div class="form-actions">
@@ -1578,12 +1580,7 @@
       }
     ],
 
-    photos: [
-      { id: 'p1', url: '', emoji: '🌙', caption: 'Friday night vibes at the harbor — absolutely packed 🔥', author: 'Jake Torres', car: '04 STI', date: '2024-11-01', wide: true  },
-      { id: 'p2', url: '', emoji: '🏁', caption: "Maya pulling out of C&C, judge loved it", author: 'Ray Delgado', car: '99 S15', date: '2024-10-26', wide: false },
-      { id: 'p3', url: '', emoji: '🌑', caption: 'Late night canyon run. No footage. 👀',  author: 'Maya Chen',   car: '22 Type R', date: '2024-10-19', wide: false },
-      { id: 'p4', url: '', emoji: '🔧', caption: 'Freshly wrapped in Satin PPF',           author: 'Jake Torres', car: '04 STI', date: '2024-10-15', wide: false }
-    ],
+    photos: [],
 
     announcements: [
       {
@@ -1645,7 +1642,28 @@
       }),
       fromDb: m => ({ ...m, desc: m.description || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
     },
-    photos: { table: 'photo_drops', order: 'created_at' },
+    photos: {
+      table: 'photo_drops', order: 'created_at',
+      toDb: p => ({
+        id: p.id,
+        meet_id: p.meet_id || p.meetId,
+        user_id: p.user_id || currentSessionUserId() || currentUserId(),
+        member_id: p.member_id || p.memberId || null,
+        image_url: p.image_url || p.imageUrl || p.url,
+        caption: p.caption || '',
+        display_name: p.display_name || p.author || '',
+        car_label: p.car_label || p.car || ''
+      }),
+      fromDb: p => ({
+        ...p,
+        meetId: p.meet_id || null,
+        memberId: p.member_id || null,
+        imageUrl: p.image_url || p.url || '',
+        displayName: p.display_name || p.author || '',
+        carLabel: p.car_label || p.car || '',
+        date: p.created_at || p.date || null
+      })
+    },
     announcements: { table: 'announcements', order: 'created_at' }
   };
 
@@ -1966,8 +1984,10 @@
       document.getElementById('add-member-form').classList.remove('open');
       document.getElementById('add-meet-form').classList.remove('open');
       document.getElementById('checkin-form').classList.remove('open');
+      document.getElementById('add-photo-form').classList.remove('open');
       resetMemberForm();
       clearMeetForm();
+      clearPhotoForm();
     }
   }
 
@@ -2304,6 +2324,7 @@
 
     if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
     if (kind === 'meets' && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
+    if (kind === 'photos' && currentUserId()) query = query.eq('user_id', currentUserId());
 
     const { error } = await query;
 
@@ -2321,6 +2342,7 @@
     let query = supabaseClient.from(DB[kind].table).delete().eq('id', id);
     if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
     if (kind === 'meets' && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
+    if (kind === 'photos' && currentUserId()) query = query.eq('user_id', currentUserId());
     const { error } = await query;
     if (error) throw error;
   }
@@ -2493,11 +2515,14 @@
       });
     });
 
-    (photos || []).forEach(p => items.push({
-      icon: '📸',
-      date: activityDate(p, p.date),
-      txt: `<strong>${esc(p.author || 'Someone')}</strong> dropped a photo${p.caption ? `: “${esc(p.caption)}”` : ''}`
-    }));
+    (photos || []).forEach(p => {
+      const meetName = meetTitles[p.meet_id || p.meetId] || 'a meet';
+      items.push({
+        icon: '📸',
+        date: activityDate(p, p.date),
+        txt: `<strong>${esc(photoPosterName(p))}</strong> dropped a photo for ${esc(meetName)}${p.caption ? `: “${esc(p.caption)}”` : ''}`
+      });
+    });
 
     (announcements || []).forEach(a => items.push({
       icon: '📢',
@@ -3323,41 +3348,104 @@
   //    FUTURE: Replace URL field with Supabase Storage file upload
   // ==============================================================
 
-  const EMOJIS = ['🚗','🏎️','🔧','🌙','🏁','🔥','📸','⚡','🌃'];
+  function sortedMeetsForSelect() {
+    return [...(appData.meets || [])].sort((a, b) => {
+      const aTime = meetStartsAt(a) || new Date(0);
+      const bTime = meetStartsAt(b) || new Date(0);
+      return bTime - aTime;
+    });
+  }
+
+  function meetTitleById(id) {
+    const meet = (appData.meets || []).find(m => m.id === id);
+    return meet ? meet.title : 'Meet not found';
+  }
+
+  function photoMember(photo) {
+    if (!photo) return null;
+    if (photo.member_id || photo.memberId) {
+      const byId = appData.members.find(m => m.id === (photo.member_id || photo.memberId));
+      if (byId) return byId;
+    }
+    return photo.user_id ? appData.members.find(m => m.user_id === photo.user_id) : null;
+  }
+
+  function photoPosterName(photo) {
+    const member = photoMember(photo);
+    return cleanDisplayName(member && member.name, cleanDisplayName(photo && (photo.displayName || photo.display_name || photo.author), 'A crew member'));
+  }
+
+  function photoVehicleInfo(photo) {
+    const member = photoMember(photo);
+    const profileVehicle = member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : '';
+    return cleanDisplayName(profileVehicle || (photo && (photo.carLabel || photo.car_label || photo.car)), '');
+  }
+
+  function userCanDeletePhoto(photo) {
+    const uid = currentUserId();
+    return !!uid && !!photo && photo.user_id === uid;
+  }
+
+  function populatePhotoMeetSelect() {
+    const select = document.getElementById('ph-meet');
+    if (!select) return;
+    const meets = sortedMeetsForSelect();
+    select.innerHTML = meets.length
+      ? `<option value="">Choose a meet...</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`
+      : '<option value="">Create a meet first</option>';
+    select.disabled = !meets.length;
+  }
 
   function renderPhotos() {
-    const photos = appData.photos;
+    const photos = [...(appData.photos || [])].sort((a, b) => activityDate(b, b.date) - activityDate(a, a.date));
     const grid = document.getElementById('photo-grid');
+    populatePhotoMeetSelect();
 
     if (!photos.length) {
-      grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📸</div><div class="empty-title">No Photos Yet</div><div class="empty-sub">Drop the first photo from a meet</div></div>`;
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📸</div><div class="empty-title">No photo drops yet</div><div class="empty-sub">Be the first to drop a meet photo</div></div>`;
       return;
     }
 
     grid.innerHTML = photos.map(p => {
-      const bgStyle = p.url ? `background-image:url('${esc(p.url)}');background-size:cover;background-position:center;` : '';
+      const imageUrl = p.imageUrl || p.image_url || p.url || '';
+      const postedAt = activityDate(p, p.date);
+      const vehicle = photoVehicleInfo(p);
       return `
-        <div class="photo-card ${p.wide ? 'wide' : ''}">
-          <div class="photo-thumb" style="${bgStyle}">
-            ${p.url ? '' : `<span>${p.emoji || '📸'}</span>`}
-          </div>
+        <div class="photo-card">
+          ${imageUrl ? `<img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(p.caption || `Photo from ${meetTitleById(p.meet_id || p.meetId)}`)}" loading="lazy" onerror="this.replaceWith(photoFallback())">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
           <div class="photo-info">
-            <div class="photo-cap">${esc(p.caption)}</div>
+            <div class="photo-meet">${esc(meetTitleById(p.meet_id || p.meetId))}</div>
+            ${p.caption ? `<div class="photo-cap">${esc(p.caption)}</div>` : ''}
             <div class="photo-meta">
-              <span>${esc(p.author)} · ${esc(p.car)} · ${fmtDate(p.date)}</span>
-              <button class="photo-del" onclick="deletePhoto('${p.id}')" title="Delete photo">✕</button>
+              <div class="photo-meta-main">
+                <div class="photo-author">${esc(photoPosterName(p))}</div>
+                ${vehicle ? `<div class="photo-car">${esc(vehicle)}</div>` : ''}
+                <div>${esc(formatActivityTime(postedAt))}</div>
+              </div>
+              ${userCanDeletePhoto(p) ? `<button class="photo-del" onclick="deletePhoto('${p.id}')" title="Delete photo">✕</button>` : ''}
             </div>
           </div>
         </div>`;
     }).join('');
   }
 
+  function photoFallback() {
+    const fallback = document.createElement('div');
+    fallback.className = 'photo-thumb';
+    fallback.textContent = '📸';
+    fallback.setAttribute('role', 'img');
+    fallback.setAttribute('aria-label', 'Photo unavailable');
+    return fallback;
+  }
+  window.photoFallback = photoFallback;
+
   // Toggle add-photo form
   document.getElementById('toggle-add-photo').addEventListener('click', () => {
     if (!currentUserId()) {
-      promptSignIn('Sign in to post a photo.');
+      promptSignIn('Sign in to drop a photo.');
       return;
     }
+    populatePhotoMeetSelect();
     document.getElementById('add-photo-form').classList.toggle('open');
   });
   document.getElementById('cancel-photo-btn').addEventListener('click', () => {
@@ -3368,22 +3456,26 @@
   // Save photo
   document.getElementById('save-photo-btn').addEventListener('click', async () => {
     if (!currentUserId()) {
-      promptSignIn('Sign in to post a photo.');
+      promptSignIn('Sign in to drop a photo.');
       return;
     }
-    const cap    = document.getElementById('ph-cap').value.trim();
-    const author = document.getElementById('ph-author').value.trim();
-    if (!cap || !author) { toast('Caption and name are required'); return; }
+    const meetId = document.getElementById('ph-meet').value;
+    const imageUrl = document.getElementById('ph-url').value.trim();
+    const caption = document.getElementById('ph-cap').value.trim();
+    const meet = appData.meets.find(m => m.id === meetId);
+    if (!meet) { toast('Choose a meet for this photo'); return; }
+    if (!imageUrl) { toast('Photo URL is required'); return; }
 
+    const member = myMemberProfile();
     const photo = {
-      id:     genId(),
-      url:    document.getElementById('ph-url').value.trim(),
-      emoji:  EMOJIS[Math.floor(Math.random() * EMOJIS.length)],
-      caption: cap,
-      author,
-      car:    document.getElementById('ph-car').value.trim() || 'Unknown',
-      date:   new Date().toISOString().split('T')[0],
-      wide:   false
+      id: genId(),
+      meet_id: meetId,
+      user_id: currentUserId(),
+      member_id: member ? member.id : null,
+      image_url: imageUrl,
+      caption,
+      display_name: currentActorName(),
+      car_label: member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : ''
     };
 
     try {
@@ -3393,21 +3485,24 @@
       document.getElementById('add-photo-form').classList.remove('open');
       renderPhotos();
       renderHome();
-      toast('Photo dropped 📸');
+      toast(`Photo dropped for ${meet.title} 📸`);
     } catch (err) {
       toast(`Could not save photo: ${err.message}`);
     }
   });
 
   function clearPhotoForm() {
-    ['ph-url','ph-cap','ph-author','ph-car'].forEach(id => {
+    ['ph-url','ph-cap'].forEach(id => {
       document.getElementById(id).value = '';
     });
+    const meetSelect = document.getElementById('ph-meet');
+    if (meetSelect) meetSelect.value = '';
   }
 
   async function deletePhoto(id) {
-    if (!currentUserId()) {
-      promptSignIn('Sign in to remove a photo.');
+    const photo = appData.photos.find(p => p.id === id);
+    if (!currentUserId() || !userCanDeletePhoto(photo)) {
+      promptSignIn('Sign in as the photo owner to remove it.');
       return;
     }
     if (!confirm('Delete this photo?')) return;
