@@ -625,6 +625,11 @@
     .rsvp-btn.maybe.on  { background: var(--amber);  color: #000; }
     .rsvp-btn.cantgo.on { background: var(--red);    color: #fff; }
     .rsvp-btn:hover { opacity: 0.8; }
+    .rsvp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .rsvp-signin-msg {
+      color: var(--text-3); font-size: 0.74rem;
+      margin: -4px 0 11px; text-align: center;
+    }
     .checkin-btn {
       width: 100%; padding: 10px;
       background: transparent; border: 1px solid var(--accent-border);
@@ -1501,11 +1506,11 @@
       toDb: m => ({
         id: m.id, title: m.title, date: m.date, time: m.time || null,
         location: m.location, description: m.desc || '',
-        rsvp: m.rsvp || { going: 0, maybe: 0, cantgo: 0 },
+        rsvp: m.rsvp || emptyRsvpCounts(),
         my_rsvp: m.myRsvp || null,
         checked_in: !!m.checkedIn
       }),
-      fromDb: m => ({ ...m, desc: m.description || '', myRsvp: m.my_rsvp || null, checkedIn: !!m.checked_in, rsvp: m.rsvp || { going: 0, maybe: 0, cantgo: 0 } })
+      fromDb: m => ({ ...m, desc: m.description || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, rsvp: normalizeRsvpCounts(m.rsvp) })
     },
     photos: { table: 'photo_drops', order: 'created_at' },
     announcements: { table: 'announcements', order: 'created_at' }
@@ -1520,6 +1525,49 @@
     currentUser: null,
     currentSession: null
   };
+
+
+  function emptyRsvpCounts() {
+    return { going: 0, maybe: 0, not_going: 0 };
+  }
+
+  function normalizeRsvpCounts(counts) {
+    const src = counts || {};
+    return {
+      going: Number(src.going || 0),
+      maybe: Number(src.maybe || 0),
+      not_going: Number(src.not_going || src.cantgo || 0)
+    };
+  }
+
+  function normalizeRsvpStatus(status) {
+    return status === 'cantgo' ? 'not_going' : status;
+  }
+
+  function rsvpButtonClass(status) {
+    return status === 'not_going' ? 'cantgo' : status;
+  }
+
+  function rsvpLabel(status) {
+    return ({ going: 'Going', maybe: 'Maybe', not_going: "Can't Go" })[status] || status;
+  }
+
+  function decorateMeetsWithRsvps(rsvps) {
+    const uid = currentUserId();
+    const countsByMeet = {};
+    const mineByMeet = {};
+    (rsvps || []).forEach(row => {
+      if (!row || !row.meet_id || !row.status) return;
+      if (!countsByMeet[row.meet_id]) countsByMeet[row.meet_id] = emptyRsvpCounts();
+      if (countsByMeet[row.meet_id][row.status] !== undefined) countsByMeet[row.meet_id][row.status] += 1;
+      if (uid && row.user_id === uid) mineByMeet[row.meet_id] = normalizeRsvpStatus(row.status);
+    });
+    appData.meets = appData.meets.map(meet => ({
+      ...meet,
+      rsvp: countsByMeet[meet.id] || normalizeRsvpCounts(meet.rsvp),
+      myRsvp: mineByMeet[meet.id] || null
+    }));
+  }
 
   let authStateUnsubscribe = null;
   let lastHandledAuthKey = '';
@@ -1913,7 +1961,25 @@
     }
 
     appData[kind] = (data || []).map(row => normalize(kind, row));
+    if (kind === 'meets') await loadMeetRsvps(showError);
     return appData[kind];
+  }
+
+  async function loadMeetRsvps(showError = true) {
+    if (!isSupabaseReady() || !currentUserId() || !appData.meets.length) return [];
+
+    const { data, error } = await supabaseClient
+      .from('meet_rsvps')
+      .select('meet_id,user_id,status');
+
+    if (error) {
+      console.error('Could not load meet RSVPs', error);
+      if (showError) toast(`Could not load RSVP counts: ${error.message}`);
+      return [];
+    }
+
+    decorateMeetsWithRsvps(data || []);
+    return data || [];
   }
 
   async function loadAllData(showToast = true, throwOnError = false) {
@@ -2319,8 +2385,14 @@
     }
 
     const sorted = [...meets].sort((a,b) => new Date(a.date) - new Date(b.date));
+    const canRsvp = !!currentUserId();
 
-    el.innerHTML = sorted.map(m => `
+    el.innerHTML = sorted.map(m => {
+      const counts = normalizeRsvpCounts(m.rsvp);
+      const myRsvp = canRsvp ? (m.myRsvp || null) : null;
+      const rsvpButtons = ['going', 'maybe', 'not_going'].map(status => `
+            <button class="rsvp-btn ${rsvpButtonClass(status)} ${myRsvp===status ? 'on':''}" onclick="setRsvp('${m.id}','${status}')" ${canRsvp ? '' : 'disabled'}>${status === 'going' ? '✓' : status === 'maybe' ? '?' : '✗'} ${rsvpLabel(status)}</button>`).join('');
+      return `
       <div class="meet-card" id="mc-${m.id}">
         <div class="meet-topbar"></div>
         <div class="meet-bdy">
@@ -2331,17 +2403,15 @@
 
           <!-- RSVP counts -->
           <div class="rsvp-counts">
-            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--green)"></div>${m.rsvp.going} Going</div>
-            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--amber)"></div>${m.rsvp.maybe} Maybe</div>
-            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--red)"></div>${m.rsvp.cantgo} Can't Go</div>
+            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--green)"></div>${counts.going} Going</div>
+            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--amber)"></div>${counts.maybe} Maybe</div>
+            <div class="rsvp-ct"><div class="dot-sm" style="background:var(--red)"></div>${counts.not_going} Can't Go</div>
           </div>
 
           <!-- RSVP buttons -->
-          <div class="rsvp-row">
-            <button class="rsvp-btn going  ${m.myRsvp==='going'  ? 'on':''}" onclick="setRsvp('${m.id}','going')">✓ Going</button>
-            <button class="rsvp-btn maybe  ${m.myRsvp==='maybe'  ? 'on':''}" onclick="setRsvp('${m.id}','maybe')">? Maybe</button>
-            <button class="rsvp-btn cantgo ${m.myRsvp==='cantgo' ? 'on':''}" onclick="setRsvp('${m.id}','cantgo')">✗ Can't Go</button>
+          <div class="rsvp-row">${rsvpButtons}
           </div>
+          ${canRsvp ? '' : '<div class="rsvp-signin-msg">Sign in to RSVP.</div>'}
 
           <!-- Check-In -->
           <!-- FUTURE: Connect to Supabase to log real check-ins with GPS + timestamp -->
@@ -2353,7 +2423,8 @@
           <button class="btn-sm-ghost" onclick="editMeet('${m.id}')">✏️ Edit</button>
           <button class="btn-sm-ghost btn-sm-del" onclick="deleteMeet('${m.id}')">🗑 Delete</button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 
   // Toggle add-meet form
@@ -2384,7 +2455,7 @@
       time:     document.getElementById('meet-time').value,
       location: loc,
       desc:     document.getElementById('meet-desc').value.trim(),
-      rsvp:     { going: 0, maybe: 0, cantgo: 0 },
+      rsvp:     emptyRsvpCounts(),
       myRsvp:   null,
       checkedIn: false
     };
@@ -2392,7 +2463,7 @@
     try {
       if (editId) {
         const existing = meets.find(m => m.id === editId) || {};
-        await updateRecord('meets', editId, { ...existing, ...meet });
+        await updateRecord('meets', editId, { ...existing, ...meet, rsvp: existing.rsvp || emptyRsvpCounts(), myRsvp: existing.myRsvp || null, checkedIn: !!existing.checkedIn });
         toast('Meet updated ✓');
       } else {
         await addRecord('meets', meet);
@@ -2446,18 +2517,51 @@
 
   // RSVP toggle
   async function setRsvp(meetId, status) {
-    const meets = appData.meets;
-    const m = meets.find(x => x.id === meetId);
+    const m = appData.meets.find(x => x.id === meetId);
     if (!m) return;
-    // Undo previous
-    if (m.myRsvp) m.rsvp[m.myRsvp] = Math.max(0, m.rsvp[m.myRsvp] - 1);
-    // Toggle off if same
-    if (m.myRsvp === status) { m.myRsvp = null; }
-    else { m.myRsvp = status; m.rsvp[status]++; }
-    try { await updateRecord('meets', meetId, m); } catch (err) { toast(`Could not save RSVP: ${err.message}`); }
+    if (!currentUserId()) {
+      toast('Sign in to RSVP.');
+      return;
+    }
+
+    const previous = normalizeRsvpStatus(m.myRsvp);
+    const nextStatus = previous === status ? null : status;
+    m.rsvp = normalizeRsvpCounts(m.rsvp);
+    if (previous && m.rsvp[previous] !== undefined) m.rsvp[previous] = Math.max(0, m.rsvp[previous] - 1);
+    if (nextStatus && m.rsvp[nextStatus] !== undefined) m.rsvp[nextStatus] += 1;
+    m.myRsvp = nextStatus;
     renderMeets();
-    const msgs = { going: '✅ You\'re going!', maybe: '🤔 Marked as maybe', cantgo: '❌ Can\'t make it' };
-    if (m.myRsvp) toast(msgs[m.myRsvp]);
+
+    try {
+      if (isSupabaseReady()) {
+        if (nextStatus) {
+          const { error } = await supabaseClient
+            .from('meet_rsvps')
+            .upsert({ meet_id: meetId, user_id: currentUserId(), status: nextStatus, updated_at: new Date().toISOString() }, { onConflict: 'meet_id,user_id' });
+          if (error) throw error;
+        } else {
+          const { error } = await supabaseClient
+            .from('meet_rsvps')
+            .delete()
+            .eq('meet_id', meetId)
+            .eq('user_id', currentUserId());
+          if (error) throw error;
+        }
+        await updateRecord('meets', meetId, { ...m, rsvp: m.rsvp });
+        await loadKind('meets', false);
+      } else {
+        await updateRecord('meets', meetId, m);
+      }
+      renderMeets();
+      const msgs = { going: "✅ You're going!", maybe: '🤔 Marked as maybe', not_going: "❌ Can't make it" };
+      toast(nextStatus ? msgs[nextStatus] : 'RSVP removed');
+    } catch (err) {
+      if (previous && m.rsvp[previous] !== undefined) m.rsvp[previous] += 1;
+      if (nextStatus && m.rsvp[nextStatus] !== undefined) m.rsvp[nextStatus] = Math.max(0, m.rsvp[nextStatus] - 1);
+      m.myRsvp = previous || null;
+      renderMeets();
+      toast(`Could not save RSVP: ${err.message}`);
+    }
   }
 
   // Check-in toggle
