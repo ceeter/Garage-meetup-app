@@ -396,6 +396,34 @@
       line-height: 1.45;
     }
     .auth-required-note.show { display: block; }
+    .crew-switcher {
+      display: none;
+      gap: 8px;
+      align-items: center;
+      margin: 12px 0 8px;
+      padding: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+    }
+    .crew-switcher.show { display: flex; }
+    .crew-select { flex: 1; min-height: 40px; font-size: 0.88rem; }
+    .crew-chip {
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      font-family: var(--f-display);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .crew-chip.primary { color: var(--accent); border-color: var(--accent-border); background: var(--accent-lo); }
+    .garage-view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+    .garage-view-toggle .btn-ghost.active { border-color: var(--accent); color: var(--accent); background: var(--accent-lo); }
     @media (min-width: 600px) {
       .auth-panel { padding: calc(66px + env(safe-area-inset-top, 0px)) 22px calc(var(--safe-bot) + 18px); }
     }
@@ -1040,6 +1068,13 @@
        MAIN CONTENT
        ============================================================ -->
   <main class="main">
+    <div class="crew-switcher" id="crew-switcher" aria-label="Crew selector">
+      <select class="form-inp crew-select" id="crew-select">
+        <option value="">All CruiseCrew</option>
+      </select>
+      <button class="crew-chip primary" id="crew-create" type="button">New</button>
+      <button class="crew-chip" id="crew-clear" type="button">Global</button>
+    </div>
 
     <div class="auth-panel" id="auth-panel" aria-label="Account sign in" role="dialog" aria-modal="true">
       <div class="auth-card">
@@ -1136,6 +1171,11 @@
       <div class="sec-hdr">
         <div class="sec-title">The <em>Garage</em></div>
         <button class="btn-add" id="toggle-add-member" title="Add Member" aria-label="Add Member">+</button>
+      </div>
+
+      <div class="garage-view-toggle" role="tablist" aria-label="Garage view">
+        <button class="btn-ghost active" id="garage-crew-view" type="button">Crew Garage</button>
+        <button class="btn-ghost" id="garage-global-view" type="button">Global Garage</button>
       </div>
 
       <div class="auth-required-note" id="garage-auth-note">Use the header account button to sign in and create or edit your own garage profile. Public profiles remain visible.</div>
@@ -1633,6 +1673,8 @@
     photos:        'gc_photos',
     announcements: 'gc_announcements',
     checkins:      'gc_checkins',
+    selectedGroup: 'cc_selected_group',
+    garageView:    'cc_garage_view',
     seeded:        'gc_seeded'
   };
 
@@ -1648,7 +1690,7 @@
     meets: {
       table: 'meets', order: 'date',
       toDb: m => ({
-        id: m.id, title: m.title, date: m.date, time: m.time || null,
+        id: m.id, group_id: m.group_id || selectedGroupId() || null, title: m.title, date: m.date, time: m.time || null,
         location: m.location, description: m.desc || '',
         rsvp: m.rsvp || emptyRsvpCounts(),
         my_rsvp: m.myRsvp || null,
@@ -1660,9 +1702,10 @@
     photos: {
       table: 'photo_drops',
       order: 'created_at',
-      select: 'id, meet_id, user_id, member_id, image_url, caption, display_name, car_label, spot_label, created_at',
+      select: 'id, group_id, meet_id, user_id, member_id, image_url, caption, display_name, car_label, spot_label, created_at',
       toDb: p => ({
         id: p.id,
+        group_id: p.group_id || selectedGroupId() || null,
         meet_id: p.meet_id || null,
         user_id: p.user_id || currentSessionUserId() || currentUserId(),
         member_id: p.member_id || null,
@@ -1686,11 +1729,60 @@
     photos: [],
     announcements: [],
     checkins: [],
+    groups: [],
+    groupMemberships: [],
+    selectedGroupId: localStorage.getItem(LS.selectedGroup) || '',
+    garageView: localStorage.getItem(LS.garageView) || 'crew',
     rsvps: [],
     expandedMeetRosters: new Set(),
     currentUser: null,
     currentSession: null
   };
+
+
+  function selectedGroupId() {
+    return appData.selectedGroupId || '';
+  }
+
+  function selectedGroup() {
+    const gid = selectedGroupId();
+    return gid ? appData.groups.find(g => g.id === gid) : null;
+  }
+
+  function groupMembershipUserIds(groupId = selectedGroupId()) {
+    if (!groupId) return new Set();
+    return new Set((appData.groupMemberships || []).filter(m => m.group_id === groupId).map(m => m.user_id));
+  }
+
+  function selectedGroupLabel() {
+    const group = selectedGroup();
+    return group ? group.name : 'All CruiseCrew';
+  }
+
+  function scopedMembers() {
+    if (!selectedGroupId()) return appData.members || [];
+    const ids = groupMembershipUserIds();
+    return (appData.members || []).filter(m => m.user_id && ids.has(m.user_id));
+  }
+
+  function garageMembers() {
+    return appData.garageView === 'global' ? (appData.members || []) : scopedMembers();
+  }
+
+  function scopedMeets() {
+    const gid = selectedGroupId();
+    return gid ? (appData.meets || []).filter(m => m.group_id === gid) : (appData.meets || []);
+  }
+
+  function scopedPhotos() {
+    const gid = selectedGroupId();
+    return gid ? (appData.photos || []).filter(p => p.group_id === gid || (p.meet_id && scopedMeets().some(m => m.id === p.meet_id))) : (appData.photos || []);
+  }
+
+  function scopedCheckins() {
+    const gid = selectedGroupId();
+    return gid ? (appData.checkins || []).filter(c => c.group_id === gid || (c.meet_id && scopedMeets().some(m => m.id === c.meet_id))) : (appData.checkins || []);
+  }
 
 
   function emptyRsvpCounts() {
@@ -1874,6 +1966,9 @@
     appData.currentUser = null;
     appData.rsvps = [];
     appData.checkins = [];
+    appData.groupMemberships = [];
+    appData.selectedGroupId = '';
+    localStorage.removeItem(LS.selectedGroup);
     appData.meets = appData.meets.map(meet => ({ ...meet, myRsvp: null }));
     if (authRefreshPromise) authRefreshPromise = null;
     setAuthLoading(false);
@@ -1999,7 +2094,9 @@
     const cruiseStartBtn = document.getElementById('cruise-start');
     const addPhotoBtn = document.getElementById('toggle-add-photo');
     const addAnnBtn = document.getElementById('toggle-add-ann');
+    const crewSwitcher = document.getElementById('crew-switcher');
 
+    if (crewSwitcher) crewSwitcher.classList.toggle('show', signedIn);
     panel.classList.toggle('signed-in', signedIn);
     trigger.classList.toggle('signed-in', signedIn);
     trigger.textContent = signedIn ? compactEmail(email) : 'Sign In';
@@ -2254,6 +2351,98 @@
     authStateUnsubscribe = data && data.subscription;
   }
 
+
+  async function loadGroups(showError = true) {
+    appData.groups = [];
+    appData.groupMemberships = [];
+    if (!isSupabaseReady() || !currentUserId()) {
+      renderGroupSwitcher();
+      return [];
+    }
+
+    const [{ data: groups, error: groupsError }, { data: memberships, error: membershipsError }] = await Promise.all([
+      supabaseClient.from('groups').select('*').order('name', { ascending: true }),
+      supabaseClient.from('group_memberships').select('*')
+    ]);
+
+    if (groupsError || membershipsError) {
+      const error = groupsError || membershipsError;
+      console.error('Could not load groups', error);
+      if (showError) toast(`Could not load crews: ${error.message}`);
+      renderGroupSwitcher();
+      return [];
+    }
+
+    appData.groups = groups || [];
+    appData.groupMemberships = memberships || [];
+    if (selectedGroupId() && !appData.groups.some(g => g.id === selectedGroupId())) {
+      appData.selectedGroupId = '';
+      localStorage.removeItem(LS.selectedGroup);
+    }
+    renderGroupSwitcher();
+    return appData.groups;
+  }
+
+  function renderGroupSwitcher() {
+    const select = document.getElementById('crew-select');
+    if (!select) return;
+    const myGroupIds = new Set((appData.groupMemberships || []).filter(m => m.user_id === currentUserId()).map(m => m.group_id));
+    const options = (appData.groups || []).map(g => {
+      const suffix = myGroupIds.has(g.id) ? '' : ' (join)';
+      return `<option value="${esc(g.id)}">${esc(g.name)}${suffix}</option>`;
+    }).join('');
+    select.innerHTML = `<option value="">All CruiseCrew</option>${options}`;
+    select.value = selectedGroupId();
+  }
+
+  async function createGroup() {
+    if (!currentUserId()) { promptSignIn('Sign in to create a crew.'); return; }
+    const name = prompt('Crew name');
+    if (!name || !name.trim()) return;
+    try {
+      const { data: group, error } = await supabaseClient
+        .from('groups')
+        .insert([{ name: name.trim(), owner_id: currentUserId() }])
+        .select()
+        .single();
+      if (error) throw error;
+      appData.selectedGroupId = group.id;
+      localStorage.setItem(LS.selectedGroup, group.id);
+      await loadAllData(false, false);
+      renderHome();
+      renderActiveTab();
+      toast(`Created ${group.name}`);
+    } catch (err) {
+      toast(`Could not create crew: ${err.message}`);
+    }
+  }
+
+  async function joinSelectedGroup(groupId) {
+    if (!currentUserId() || !groupId) return;
+    const hasMembership = (appData.groupMemberships || []).some(m => m.group_id === groupId && m.user_id === currentUserId());
+    if (hasMembership) return;
+    const { error } = await supabaseClient
+      .from('group_memberships')
+      .insert([{ group_id: groupId, user_id: currentUserId(), role: 'member' }]);
+    if (error) throw error;
+    await loadGroups(false);
+  }
+
+  async function selectGroup(groupId) {
+    try {
+      if (groupId) await joinSelectedGroup(groupId);
+      appData.selectedGroupId = groupId || '';
+      if (groupId) localStorage.setItem(LS.selectedGroup, groupId);
+      else localStorage.removeItem(LS.selectedGroup);
+      renderGroupSwitcher();
+      renderHome();
+      renderActiveTab();
+    } catch (err) {
+      toast(`Could not join crew: ${err.message}`);
+      renderGroupSwitcher();
+    }
+  }
+
   function myMemberProfile() {
     const uid = currentUserId();
     if (!uid) return null;
@@ -2363,6 +2552,7 @@
   async function loadAllData(showToast = true, throwOnError = false) {
     if (!isSupabaseReady()) seedIfNeeded();
 
+    await loadGroups(showToast);
     const kinds = ['members','meets','photos','announcements'];
     const results = await Promise.allSettled([
       ...kinds.map(kind => loadKind(kind, showToast, throwOnError)),
@@ -2484,15 +2674,33 @@
   // Make switchTab available globally (used in home-tab links)
   window.switchTab = switchTab;
 
+  document.getElementById('crew-select').addEventListener('change', event => selectGroup(event.target.value));
+  document.getElementById('crew-create').addEventListener('click', createGroup);
+  document.getElementById('crew-clear').addEventListener('click', () => selectGroup(''));
+  document.getElementById('garage-crew-view').addEventListener('click', () => {
+    appData.garageView = 'crew';
+    localStorage.setItem(LS.garageView, 'crew');
+    document.getElementById('garage-crew-view').classList.add('active');
+    document.getElementById('garage-global-view').classList.remove('active');
+    renderMembers();
+  });
+  document.getElementById('garage-global-view').addEventListener('click', () => {
+    appData.garageView = 'global';
+    localStorage.setItem(LS.garageView, 'global');
+    document.getElementById('garage-global-view').classList.add('active');
+    document.getElementById('garage-crew-view').classList.remove('active');
+    renderMembers();
+  });
+
 
   // ==============================================================
   // 4. HOME DASHBOARD
   // ==============================================================
 
   function renderHome() {
-    const members       = appData.members || [];
-    const meets         = appData.meets || [];
-    const photos        = appData.photos || [];
+    const members       = scopedMembers();
+    const meets         = scopedMeets();
+    const photos        = scopedPhotos();
     const announcements = appData.announcements || [];
     const checkins      = activeCheckins();
     const upcomingMeets = upcomingMeetsList(meets);
@@ -2505,7 +2713,7 @@
 
     // Hero meta
     document.getElementById('home-meta').textContent =
-      `${members.length} member profile${members.length !== 1 ? 's' : ''} · ` +
+      `${selectedGroupLabel()} · ${members.length} member profile${members.length !== 1 ? 's' : ''} · ` +
       `${upcomingMeets.length} upcoming meet${upcomingMeets.length !== 1 ? 's' : ''} · ` +
       `${photos.length} photo drop${photos.length !== 1 ? 's' : ''} · ` +
       `${checkins.length} active check-in${checkins.length !== 1 ? 's' : ''}`;
@@ -2642,12 +2850,14 @@
   // ==============================================================
 
   function renderMembers() {
-    const members = appData.members;
+    const members = garageMembers();
     const el = document.getElementById('members-list');
     const uid = currentUserId();
+    document.getElementById('garage-crew-view').classList.toggle('active', appData.garageView !== 'global');
+    document.getElementById('garage-global-view').classList.toggle('active', appData.garageView === 'global');
 
     if (!members.length) {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-title">No Members Yet</div><div class="empty-sub">Tap + to add your first member</div></div>`;
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-title">No cars in this crew yet.</div><div class="empty-sub">Switch to Global Garage to browse every profile.</div></div>`;
       return;
     }
 
@@ -2948,11 +3158,11 @@
   }
 
   function renderMeets() {
-    const meets = appData.meets;
+    const meets = scopedMeets();
     const el = document.getElementById('meets-list');
 
     if (!meets.length) {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">🏁</div><div class="empty-title">No Meets Yet</div><div class="empty-sub">Tap + to schedule a meet</div></div>`;
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🏁</div><div class="empty-title">No meets planned for this crew yet.</div><div class="empty-sub">Check the global view or ask an admin to schedule one.</div></div>`;
       return;
     }
 
@@ -3261,7 +3471,7 @@
 
   function activeCheckins() {
     const now = Date.now();
-    return appData.checkins.filter(c => new Date(c.expires_at).getTime() > now);
+    return scopedCheckins().filter(c => new Date(c.expires_at).getTime() > now);
   }
 
   function checkinExpiresText(expiresAt) {
@@ -3290,7 +3500,7 @@
   function populateCheckinMeetOptions() {
     const select = document.getElementById('ci-meet');
     const today = new Date().toISOString().split('T')[0];
-    const upcoming = appData.meets
+    const upcoming = scopedMeets()
       .filter(m => m.date >= today)
       .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`));
     select.innerHTML = '<option value="">No meet selected</option>' + upcoming.map(m =>
@@ -3330,7 +3540,7 @@
     }
 
     if (!checkins.length) {
-      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">📍</div><div class="empty-title">No One Checked In</div><div class="empty-sub">Start Cruise Mode to share your current spot for 4 hours.</div></div>`;
+      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">📍</div><div class="empty-title">No one is checked in with this crew right now.</div><div class="empty-sub">Start Cruise Mode to share your current spot for 4 hours.</div></div>`;
       return;
     }
 
@@ -3367,6 +3577,7 @@
     const carLabel = profile ? [profile.year, profile.make, profile.model].filter(Boolean).join(' ') : '';
     return {
       user_id: currentUserId(),
+      group_id: selectedGroupId() || null,
       display_name: currentActorName(),
       car_label: carLabel,
       location_text: locationText,
@@ -3454,7 +3665,7 @@
   // ==============================================================
 
   function sortedMeetsForSelect() {
-    return [...(appData.meets || [])].sort((a, b) => {
+    return [...scopedMeets()].sort((a, b) => {
       const aTime = meetStartsAt(a) || new Date(0);
       const bTime = meetStartsAt(b) || new Date(0);
       return bTime - aTime;
@@ -3511,12 +3722,12 @@
   }
 
   function renderPhotos() {
-    const photos = [...(appData.photos || [])].sort((a, b) => activityDate(b, b.date) - activityDate(a, a.date));
+    const photos = [...scopedPhotos()].sort((a, b) => activityDate(b, b.date) - activityDate(a, a.date));
     const grid = document.getElementById('photo-grid');
     populatePhotoMeetSelect();
 
     if (!photos.length) {
-      grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📸</div><div class="empty-title">No photo drops yet</div><div class="empty-sub">Be the first to drop a meet photo</div></div>`;
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📸</div><div class="empty-title">No photo drops in this crew yet</div><div class="empty-sub">Be the first to drop a meet photo</div></div>`;
       return;
     }
 
@@ -3586,6 +3797,7 @@
     const member = myMemberProfile();
     const photo = {
       id: genId(),
+      group_id: (meet && meet.group_id) || selectedGroupId() || null,
       meet_id: meetId,
       user_id: currentUserId(),
       member_id: member ? member.id : null,
