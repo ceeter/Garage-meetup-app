@@ -1866,11 +1866,29 @@
     return appData.currentUser && appData.currentUser.email;
   }
 
-  function resetSignedOutState() {
+  function resetSignedOutUiState({ closePanel = true, message = '' } = {}) {
+    console.log('[auth] reset signed out state');
+    authTransitionVersion += 1;
+    lastHandledAuthKey = 'SIGNED_OUT:signed-out';
     appData.currentSession = null;
     appData.currentUser = null;
     appData.rsvps = [];
+    appData.checkins = [];
     appData.meets = appData.meets.map(meet => ({ ...meet, myRsvp: null }));
+    if (authRefreshPromise) authRefreshPromise = null;
+    setAuthLoading(false);
+    setAuthStatus('', message);
+    closeCheckinForm();
+    setCheckinSaving(false);
+    setCheckinStatus('', '');
+    updateAuthUI();
+    renderHome();
+    renderActiveTab();
+    if (closePanel) closeAuthPanel();
+  }
+
+  function resetSignedOutState() {
+    resetSignedOutUiState({ closePanel: false });
   }
 
   function isAdminUser(user) {
@@ -2056,7 +2074,11 @@
     if (render) render();
   }
 
-  async function refreshAfterAuthChange(message) {
+  async function refreshAfterAuthChange(message, user = appData.currentUser || (appData.currentSession && appData.currentSession.user)) {
+    if (!user || !user.id) {
+      resetSignedOutUiState({ closePanel: false });
+      return null;
+    }
     if (authRefreshPromise) return authRefreshPromise;
 
     const refreshVersion = ++authTransitionVersion;
@@ -2066,24 +2088,15 @@
       try {
         const session = await loadCurrentSession();
         if (!session || !session.user) {
-          resetSignedOutState();
-          await loadAllData(false, false);
-          updateAuthUI();
-          renderHome();
-          renderActiveTab();
-          setAuthStatus('success', message || 'Signed out successfully.');
+          resetSignedOutUiState({ closePanel: false });
           return;
         }
 
-        if (refreshVersion !== authTransitionVersion) return;
+        if (refreshVersion !== authTransitionVersion || !currentSessionUserId()) return;
         await loadCurrentUser();
         if (refreshVersion !== authTransitionVersion) return;
         if (!currentUserId()) {
-          resetSignedOutState();
-          updateAuthUI();
-          renderHome();
-          renderActiveTab();
-          setAuthStatus('success', message || 'Signed out successfully.');
+          resetSignedOutUiState({ closePanel: false });
           return;
         }
 
@@ -2125,9 +2138,15 @@
       setAuthLoading(true);
       setAuthStatus('loading', 'Creating your account...');
       const { email, password } = authCredentials();
-      const { error } = await supabaseClient.auth.signUp({ email, password });
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
       if (error) throw error;
-      await refreshAfterAuthChange('Account created. Check your email if confirmation is required, then sign in.');
+      if (data && data.session && data.session.user) {
+        appData.currentSession = data.session;
+        appData.currentUser = data.session.user;
+        await refreshAfterAuthChange('Account created. Garage controls refreshed.', data.session.user);
+      } else {
+        setAuthStatus('success', 'Account created. Check your email if confirmation is required, then sign in.');
+      }
     } catch (err) {
       setAuthStatus('error', err.message);
     } finally {
@@ -2170,11 +2189,7 @@
       setAuthStatus('loading', 'Signing you out...');
       const { error } = await supabaseClient.auth.signOut();
       if (error) throw error;
-      authTransitionVersion += 1;
-      resetSignedOutState();
-      closeAuthPanel();
-      renderHome();
-      renderActiveTab();
+      resetSignedOutUiState();
       setAuthStatus('success', 'Signed out successfully.');
     } catch (err) {
       setAuthStatus('error', err.message);
@@ -2208,45 +2223,33 @@
     }
     if (authStateUnsubscribe) return;
 
-    const { data } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    const { data } = supabaseClient.auth.onAuthStateChange((event, session) => {
       if (!['SIGNED_IN','SIGNED_OUT','TOKEN_REFRESHED'].includes(event)) return;
-      console.log('auth state changed', event, session && session.user ? session.user.id : null);
-      if (event === 'TOKEN_REFRESHED') {
-        if (session && session.user) {
-          appData.currentSession = session;
-          appData.currentUser = session.user;
-          updateAuthUI();
-        }
-        return;
-      }
+      console.log('[auth] event', event, session && session.user ? session.user.email : null);
 
       const authKey = `${event}:${session && session.user ? session.user.id : 'signed-out'}`;
       if (authKey === lastHandledAuthKey) return;
       lastHandledAuthKey = authKey;
 
-      if (event === 'SIGNED_OUT') {
-        authTransitionVersion += 1;
-        resetSignedOutState();
-        setAuthLoading(false);
-        updateAuthUI();
-        renderHome();
-        renderActiveTab();
+      if (event === 'SIGNED_OUT' || !session || !session.user) {
+        resetSignedOutUiState();
         setAuthStatus('success', 'Signed out successfully. Public garage list is still visible.');
-        closeAuthPanel();
         return;
       }
-
-      if (!session || !session.user) {
-        resetSignedOutState();
-        setAuthLoading(false);
-        updateAuthUI();
-        return;
-      }
-      if (session.user.id === currentUserId()) return;
 
       appData.currentSession = session;
       appData.currentUser = session.user;
-      await refreshAfterAuthChange('Signed in successfully. Garage controls refreshed.');
+      updateAuthUI();
+
+      if (event === 'TOKEN_REFRESHED') return;
+
+      setTimeout(() => {
+        if (!appData.currentSession || !currentUserId()) return;
+        console.log('[auth] deferred refresh start');
+        refreshAfterAuthChange('Signed in successfully. Garage controls refreshed.', session.user)
+          .catch(err => console.error('refresh failed', err))
+          .finally(() => console.log('[auth] deferred refresh done'));
+      }, 0);
     });
     authStateUnsubscribe = data && data.subscription;
   }
