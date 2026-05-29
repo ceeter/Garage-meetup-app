@@ -1607,6 +1607,33 @@
     return ({ going: 'Going', maybe: 'Maybe', not_going: "Can't Go" })[status] || status;
   }
 
+  function cleanDisplayName(name, fallback = 'A crew member') {
+    const cleaned = String(name || '').trim();
+    return cleaned && !['null','undefined'].includes(cleaned.toLowerCase()) ? cleaned : fallback;
+  }
+
+  function authUserDisplayName(user) {
+    const meta = (user && user.user_metadata) || {};
+    return cleanDisplayName(meta.display_name || meta.full_name || meta.name || (user && user.email), 'A crew member');
+  }
+
+  function currentActorName() {
+    const profile = myMemberProfile();
+    return cleanDisplayName(profile && profile.name, authUserDisplayName(appData.currentUser || (appData.currentSession && appData.currentSession.user)));
+  }
+
+  function actorNameForUser(row, fallback = 'A crew member') {
+    const explicit = cleanDisplayName(row && (row.display_name || row.actor_name), '');
+    if (explicit) return explicit;
+    const member = row && row.user_id ? appData.members.find(m => m.user_id === row.user_id) : null;
+    return cleanDisplayName(member && member.name, fallback);
+  }
+
+  function checkinPlaceText(checkin, meetTitles) {
+    const meetTitle = checkin && checkin.meet_id && meetTitles[checkin.meet_id];
+    return cleanDisplayName(meetTitle || (checkin && checkin.location_text), 'a meetup');
+  }
+
   function decorateMeetsWithRsvps(rsvps) {
     const uid = currentUserId();
     const countsByMeet = {};
@@ -2085,11 +2112,11 @@
 
   async function loadMeetRsvps(showError = true) {
     appData.rsvps = [];
-    if (!isSupabaseReady() || !currentUserId() || !appData.meets.length) return [];
+    if (!isSupabaseReady() || !appData.meets.length) return [];
 
     const { data, error } = await supabaseClient
       .from('meet_rsvps')
-      .select('meet_id,user_id,status,created_at,updated_at');
+      .select('*');
 
     if (error) {
       console.error('Could not load meet RSVPs', error);
@@ -2104,7 +2131,7 @@
 
   async function loadCheckins(showError = true) {
     const nowIso = new Date().toISOString();
-    if (!isSupabaseReady() || !currentUserId()) {
+    if (!isSupabaseReady()) {
       appData.checkins = [];
       return [];
     }
@@ -2112,7 +2139,7 @@
     const { data, error } = await supabaseClient
       .from('check_ins')
       .select('*')
-      .gt('expires_at', nowIso)
+      .or(`expires_at.gt.${nowIso},ended_at.not.is.null`)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -2299,7 +2326,7 @@
     }
 
     // Recent Activity — a simple dashboard summary generated from existing data.
-    const feed = buildRecentActivity({ members, meets, photos, announcements, checkins });
+    const feed = buildRecentActivity({ members, meets, photos, announcements, checkins: appData.checkins || [] });
     const feedEl = document.getElementById('activity-feed');
     feedEl.innerHTML = feed.slice(0, 8).map(a =>
       `<div class="activity-item">
@@ -2361,7 +2388,7 @@
     (appData.rsvps || []).forEach(r => items.push({
       icon: '✅',
       date: activityDate(r),
-      txt: `RSVP updated to <strong>${esc(rsvpLabel(normalizeRsvpStatus(r.status)))}</strong>${meetTitles[r.meet_id] ? ` for ${esc(meetTitles[r.meet_id])}` : ''}`
+      txt: `<strong>${esc(actorNameForUser(r))}</strong> updated RSVP to <strong>${esc(rsvpLabel(normalizeRsvpStatus(r.status)))}</strong> for ${esc(meetTitles[r.meet_id] || 'a meet')}`
     }));
 
     (members || []).forEach(m => items.push({
@@ -2370,11 +2397,20 @@
       txt: `<strong>${esc(m.name)}</strong> updated a garage profile${m.make || m.model ? ` for a ${esc([m.year, m.make, m.model].filter(Boolean).join(' '))}` : ''}`
     }));
 
-    (checkins || []).forEach(c => items.push({
-      icon: '📍',
-      date: activityDate(c),
-      txt: `<strong>${esc(c.display_name || 'A crew member')}</strong> checked in${c.location_text ? ` at ${esc(c.location_text)}` : ''}`
-    }));
+    (checkins || []).forEach(c => {
+      const actorName = actorNameForUser(c);
+      const placeText = checkinPlaceText(c, meetTitles);
+      items.push({
+        icon: '📍',
+        date: activityDate(c),
+        txt: `<strong>${esc(actorName)}</strong> checked in at ${esc(placeText)}`
+      });
+      if (c.ended_at) items.push({
+        icon: '⏹',
+        date: activityDate({ created_at: c.ended_at, updated_at: c.ended_at }),
+        txt: `<strong>${esc(actorName)}</strong> checked out from ${esc(placeText)}`
+      });
+    });
 
     (photos || []).forEach(p => items.push({
       icon: '📸',
@@ -2844,7 +2880,7 @@
         if (nextStatus) {
           const { error } = await supabaseClient
             .from('meet_rsvps')
-            .upsert({ meet_id: meetId, user_id: currentUserId(), status: nextStatus, updated_at: new Date().toISOString() }, { onConflict: 'meet_id,user_id' });
+            .upsert({ meet_id: meetId, user_id: currentUserId(), status: nextStatus, display_name: currentActorName(), updated_at: new Date().toISOString() }, { onConflict: 'meet_id,user_id' });
           if (error) throw error;
         } else {
           const { error } = await supabaseClient
@@ -2855,10 +2891,12 @@
           if (error) throw error;
         }
         await loadKind('meets', false);
+        await loadCheckins(false);
       } else {
         await updateRecord('meets', meetId, m);
       }
       renderMeets();
+      renderHome();
       const msgs = { going: "✅ You're going!", maybe: '🤔 Marked as maybe', not_going: "❌ Can't make it" };
       toast(nextStatus ? msgs[nextStatus] : 'RSVP removed');
     } catch (err) {
@@ -3016,7 +3054,7 @@
     if (!currentUserId()) { promptSignIn('Sign in to start Cruise Mode.'); return; }
 
     const profile = myMemberProfile();
-    const displayName = profile ? profile.name : (currentUserEmail() || 'CruiseCrew Member').split('@')[0];
+    const displayName = currentActorName();
     const carLabel = profile ? [profile.year, profile.make, profile.model].filter(Boolean).join(' ') : '';
     const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
     const payload = {
@@ -3026,7 +3064,8 @@
       location_text: locationText,
       note,
       meet_id: meetId,
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      ended_at: null
     };
 
     try {
@@ -3043,6 +3082,7 @@
       }
       closeCheckinForm();
       await refreshCheckins(false);
+      renderHome();
       toast('📍 Cruise Mode active for 4 hours');
     } catch (err) {
       console.error('Could not start check-in', err);
@@ -3066,9 +3106,11 @@
     try {
       setCheckinSaving(true);
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      const { error } = await supabaseClient.from('check_ins').delete().eq('id', mine.id).eq('user_id', currentUserId());
+      const stoppedAt = new Date().toISOString();
+      const { error } = await supabaseClient.from('check_ins').update({ expires_at: stoppedAt, ended_at: stoppedAt, display_name: currentActorName() }).eq('id', mine.id).eq('user_id', currentUserId());
       if (error) throw error;
       await refreshCheckins(false);
+      renderHome();
       toast('⏹ Location sharing stopped');
     } catch (err) {
       console.error('Could not stop check-in', err);
