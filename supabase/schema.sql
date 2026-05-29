@@ -64,6 +64,7 @@ create table if not exists public.photo_drops (
   member_id uuid references public.members(id) on delete set null,
   image_url text not null,
   caption text default '',
+  spot_label text default '',
   display_name text default '',
   car_label text default '',
   created_at timestamptz not null default now()
@@ -95,6 +96,7 @@ alter table public.photo_drops add column if not exists user_id uuid references 
 alter table public.photo_drops add column if not exists member_id uuid references public.members(id) on delete set null;
 alter table public.photo_drops add column if not exists image_url text;
 alter table public.photo_drops add column if not exists caption text default '';
+alter table public.photo_drops add column if not exists spot_label text default '';
 alter table public.photo_drops add column if not exists display_name text default '';
 alter table public.photo_drops add column if not exists car_label text default '';
 do $$

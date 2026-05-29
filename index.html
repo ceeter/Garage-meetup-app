@@ -1338,8 +1338,12 @@
         <div class="form-title">Drop a Photo</div>
         <div class="form-grid">
           <div class="form-grp">
-            <label class="form-lbl">Meet *</label>
+            <label class="form-lbl">Meet</label>
             <select class="form-inp" id="ph-meet"></select>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl">Spot / location</label>
+            <input type="text" class="form-inp" id="ph-spot" placeholder="e.g. Harbor garage level 2">
           </div>
           <div class="form-grp">
             <label class="form-lbl">Photo URL *</label>
@@ -1646,11 +1650,12 @@
       table: 'photo_drops', order: 'created_at',
       toDb: p => ({
         id: p.id,
-        meet_id: p.meet_id || p.meetId,
+        meet_id: p.meet_id || p.meetId || null,
         user_id: p.user_id || currentSessionUserId() || currentUserId(),
         member_id: p.member_id || p.memberId || null,
         image_url: p.image_url || p.imageUrl || p.url,
         caption: p.caption || '',
+        spot_label: p.spot_label || p.spotLabel || '',
         display_name: p.display_name || p.author || '',
         car_label: p.car_label || p.car || ''
       }),
@@ -1659,6 +1664,7 @@
         meetId: p.meet_id || null,
         memberId: p.member_id || null,
         imageUrl: p.image_url || p.url || '',
+        spotLabel: p.spot_label || '',
         displayName: p.display_name || p.author || '',
         carLabel: p.car_label || p.car || '',
         date: p.created_at || p.date || null
@@ -2516,11 +2522,12 @@
     });
 
     (photos || []).forEach(p => {
-      const meetName = meetTitles[p.meet_id || p.meetId] || 'a meet';
+      const meetId = p.meet_id || p.meetId;
+      const photoPlace = meetId ? (meetTitles[meetId] || 'a meet') : photoDropContext(p);
       items.push({
         icon: '📸',
         date: activityDate(p, p.date),
-        txt: `<strong>${esc(photoPosterName(p))}</strong> dropped a photo for ${esc(meetName)}${p.caption ? `: “${esc(p.caption)}”` : ''}`
+        txt: `<strong>${esc(photoPosterName(p))}</strong> dropped a photo for ${esc(photoPlace)}${p.caption ? `: “${esc(p.caption)}”` : ''}`
       });
     });
 
@@ -3361,6 +3368,13 @@
     return meet ? meet.title : 'Meet not found';
   }
 
+  function photoDropContext(photo) {
+    const meetId = photo && (photo.meet_id || photo.meetId);
+    if (meetId) return meetTitleById(meetId);
+    const spot = cleanDisplayName(photo && (photo.spot_label || photo.spotLabel), '');
+    return spot || 'General crew photo';
+  }
+
   function photoMember(photo) {
     if (!photo) return null;
     if (photo.member_id || photo.memberId) {
@@ -3390,10 +3404,8 @@
     const select = document.getElementById('ph-meet');
     if (!select) return;
     const meets = sortedMeetsForSelect();
-    select.innerHTML = meets.length
-      ? `<option value="">Choose a meet...</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`
-      : '<option value="">Create a meet first</option>';
-    select.disabled = !meets.length;
+    select.innerHTML = `<option value="">No meet / general photo</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`;
+    select.disabled = false;
   }
 
   function renderPhotos() {
@@ -3408,13 +3420,14 @@
 
     grid.innerHTML = photos.map(p => {
       const imageUrl = p.imageUrl || p.image_url || p.url || '';
+      const context = photoDropContext(p);
       const postedAt = activityDate(p, p.date);
       const vehicle = photoVehicleInfo(p);
       return `
         <div class="photo-card">
-          ${imageUrl ? `<img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(p.caption || `Photo from ${meetTitleById(p.meet_id || p.meetId)}`)}" loading="lazy" onerror="this.replaceWith(photoFallback())">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
+          ${imageUrl ? `<img class="photo-thumb" src="${esc(imageUrl)}" alt="${esc(p.caption || `Photo from ${context}`)}" loading="lazy" onerror="this.replaceWith(photoFallback())">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
           <div class="photo-info">
-            <div class="photo-meet">${esc(meetTitleById(p.meet_id || p.meetId))}</div>
+            <div class="photo-meet">${esc(context)}</div>
             ${p.caption ? `<div class="photo-cap">${esc(p.caption)}</div>` : ''}
             <div class="photo-meta">
               <div class="photo-meta-main">
@@ -3459,11 +3472,12 @@
       promptSignIn('Sign in to drop a photo.');
       return;
     }
-    const meetId = document.getElementById('ph-meet').value;
+    const meetId = document.getElementById('ph-meet').value || null;
     const imageUrl = document.getElementById('ph-url').value.trim();
+    const spotLabel = document.getElementById('ph-spot').value.trim();
     const caption = document.getElementById('ph-cap').value.trim();
-    const meet = appData.meets.find(m => m.id === meetId);
-    if (!meet) { toast('Choose a meet for this photo'); return; }
+    const meet = meetId ? appData.meets.find(m => m.id === meetId) : null;
+    if (meetId && !meet) { toast('Choose a valid meet for this photo'); return; }
     if (!imageUrl) { toast('Photo URL is required'); return; }
 
     const member = myMemberProfile();
@@ -3474,6 +3488,7 @@
       member_id: member ? member.id : null,
       image_url: imageUrl,
       caption,
+      spot_label: spotLabel,
       display_name: currentActorName(),
       car_label: member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : ''
     };
@@ -3485,14 +3500,14 @@
       document.getElementById('add-photo-form').classList.remove('open');
       renderPhotos();
       renderHome();
-      toast(`Photo dropped for ${meet.title} 📸`);
+      toast(`Photo dropped for ${meet ? meet.title : (spotLabel || 'general crew')} 📸`);
     } catch (err) {
       toast(`Could not save photo: ${err.message}`);
     }
   });
 
   function clearPhotoForm() {
-    ['ph-url','ph-cap'].forEach(id => {
+    ['ph-url','ph-spot','ph-cap'].forEach(id => {
       document.getElementById(id).value = '';
     });
     const meetSelect = document.getElementById('ph-meet');
