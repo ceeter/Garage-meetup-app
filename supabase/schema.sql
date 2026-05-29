@@ -27,6 +27,7 @@ create table if not exists public.meets (
   rsvp jsonb not null default '{"going":0,"maybe":0,"cantgo":0}'::jsonb,
   my_rsvp text,
   checked_in boolean not null default false,
+  created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -65,6 +66,7 @@ create table if not exists public.announcements (
 
 alter table public.members add column if not exists user_id uuid unique references auth.users(id) on delete cascade;
 alter table public.members add column if not exists updated_at timestamptz not null default now();
+alter table public.meets add column if not exists created_by uuid references auth.users(id) on delete set null;
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
 
 create or replace function public.set_member_user_id()
@@ -129,11 +131,25 @@ create policy "users can update own meet rsvp" on public.meet_rsvps
 create policy "users can delete own meet rsvp" on public.meet_rsvps
   for delete to authenticated using (auth.uid() = user_id);
 
--- Private friend-group MVP policy for shared non-profile tables: anyone with the anon key can read/write.
-create policy "anon can read meets" on public.meets for select to anon, authenticated using (true);
-create policy "anon can insert meets" on public.meets for insert to anon, authenticated with check (true);
-create policy "anon can update meets" on public.meets for update to anon, authenticated using (true) with check (true);
-create policy "anon can delete meets" on public.meets for delete to anon, authenticated using (true);
+-- Meets are publicly readable, but signed-in users can only create or manage their own meet rows.
+drop policy if exists "anon can read meets" on public.meets;
+drop policy if exists "anon can insert meets" on public.meets;
+drop policy if exists "anon can update meets" on public.meets;
+drop policy if exists "anon can delete meets" on public.meets;
+drop policy if exists "authenticated can read meets" on public.meets;
+drop policy if exists "anon and authenticated can read meets" on public.meets;
+drop policy if exists "users can insert own meet" on public.meets;
+drop policy if exists "users can update own meet" on public.meets;
+drop policy if exists "users can delete own meet" on public.meets;
+
+create policy "anon and authenticated can read meets" on public.meets
+  for select to anon, authenticated using (true);
+create policy "users can insert own meet" on public.meets
+  for insert to authenticated with check (auth.uid() = created_by);
+create policy "users can update own meet" on public.meets
+  for update to authenticated using (auth.uid() = created_by) with check (auth.uid() = created_by);
+create policy "users can delete own meet" on public.meets
+  for delete to authenticated using (auth.uid() = created_by);
 
 create policy "anon can read photo drops" on public.photo_drops for select to anon, authenticated using (true);
 create policy "anon can insert photo drops" on public.photo_drops for insert to anon, authenticated with check (true);
