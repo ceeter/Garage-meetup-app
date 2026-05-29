@@ -1534,6 +1534,10 @@
     ? window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
     : null;
 
+  // Admin/owner controls: replace YOUR_EMAIL_HERE with your signed-in Supabase Auth email.
+  // Keep this list in sync with the matching admin email list in supabase/schema.sql.
+  const ADMIN_EMAILS = ["YOUR_EMAIL_HERE"];
+
   // Helper: date string N days from today
   function futureDate(n) {
     const d = new Date();
@@ -1861,6 +1865,21 @@
     return appData.currentUser && appData.currentUser.email;
   }
 
+  function isAdminUser(user) {
+    const email = String(user && user.email || '').trim().toLowerCase();
+    return !!email && ADMIN_EMAILS.map(adminEmail => String(adminEmail).trim().toLowerCase()).includes(email);
+  }
+
+  function currentUserIsAdmin() {
+    return isAdminUser(appData.currentUser || (appData.currentSession && appData.currentSession.user));
+  }
+
+  function requireAdminUser(message = 'Admin only') {
+    if (currentUserIsAdmin()) return true;
+    toast(message);
+    return false;
+  }
+
   let authStatusTimer = null;
 
   function setAuthStatus(type, msg) {
@@ -1937,6 +1956,7 @@
 
   function updateAuthUI() {
     const signedIn = !!currentUserId();
+    const isAdmin = currentUserIsAdmin();
     const email = currentUserEmail() || '';
     const panel = document.getElementById('auth-panel');
     const trigger = document.getElementById('account-trigger');
@@ -1967,12 +1987,14 @@
     addMemberBtn.disabled = false;
     addMemberBtn.title = signedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
-    addMeetBtn.disabled = false;
-    addMeetBtn.title = signedIn ? 'Add Meet' : 'Sign in to create a meet';
+    addMeetBtn.disabled = !isAdmin;
+    addMeetBtn.style.display = isAdmin ? '' : 'none';
+    addMeetBtn.title = isAdmin ? 'Add Meet' : 'Admin only';
     addMeetBtn.setAttribute('aria-label', addMeetBtn.title);
-    saveMeetBtn.disabled = !signedIn;
+    saveMeetBtn.disabled = !isAdmin;
     garageNote.classList.toggle('show', !signedIn);
-    meetNote.classList.toggle('show', !signedIn);
+    meetNote.textContent = signedIn ? 'Admin only: creating and managing meets is limited to owners.' : 'Sign in as an admin to create a meet.';
+    meetNote.classList.toggle('show', !isAdmin);
     if (cruiseStartBtn) {
       cruiseStartBtn.classList.toggle('dimmed', !signedIn);
       cruiseStartBtn.setAttribute('aria-disabled', String(!signedIn));
@@ -1984,9 +2006,17 @@
       addPhotoBtn.setAttribute('aria-label', addPhotoBtn.title);
     }
     if (addAnnBtn) {
-      addAnnBtn.disabled = false;
-      addAnnBtn.title = signedIn ? 'Post Crew News' : 'Sign in to post crew news';
+      addAnnBtn.disabled = !isAdmin;
+      addAnnBtn.style.display = isAdmin ? '' : 'none';
+      addAnnBtn.title = isAdmin ? 'Post Crew News' : 'Admin only';
       addAnnBtn.setAttribute('aria-label', addAnnBtn.title);
+    }
+
+    if (!isAdmin) {
+      document.getElementById('add-meet-form').classList.remove('open');
+      document.getElementById('add-ann-form').classList.remove('open');
+      clearMeetForm();
+      clearAnnForm();
     }
 
     if (!signedIn) {
@@ -2332,8 +2362,8 @@
       .eq('id', id);
 
     if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
-    if (kind === 'meets' && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
-    if (kind === 'photos' && currentUserId()) query = query.eq('user_id', currentUserId());
+    if (kind === 'meets' && !currentUserIsAdmin() && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
+    if (kind === 'photos' && !currentUserIsAdmin() && currentUserId()) query = query.eq('user_id', currentUserId());
 
     const { error } = await query;
 
@@ -2350,8 +2380,8 @@
 
     let query = supabaseClient.from(DB[kind].table).delete().eq('id', id);
     if (kind === 'members' && currentUserId()) query = query.eq('user_id', currentUserId());
-    if (kind === 'meets' && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
-    if (kind === 'photos' && currentUserId()) query = query.eq('user_id', currentUserId());
+    if (kind === 'meets' && !currentUserIsAdmin() && currentSessionUserId()) query = query.eq('created_by', currentSessionUserId());
+    if (kind === 'photos' && !currentUserIsAdmin() && currentUserId()) query = query.eq('user_id', currentUserId());
     const { error } = await query;
     if (error) throw error;
   }
@@ -2871,9 +2901,9 @@
       const checkedInCount = checkedInRoster.length;
       const myCheckin = currentUserId() && activeCheckins().some(row => row && row.meet_id === m.id && row.user_id === currentUserId());
       const myRsvp = canRsvp ? (m.myRsvp || null) : null;
-      const ownsMeet = userOwnsMeet(m);
+      const canManageMeet = currentUserIsAdmin();
       const rosterExpanded = appData.expandedMeetRosters.has(m.id);
-      const ownerActions = ownsMeet ? `
+      const ownerActions = canManageMeet ? `
         <div class="meet-ftr">
           <button class="btn-sm-ghost" onclick="editMeet('${m.id}')">✏️ Edit</button>
           <button class="btn-sm-ghost btn-sm-del" onclick="deleteMeet('${m.id}')">🗑 Delete</button>
@@ -2943,6 +2973,7 @@
   document.getElementById('toggle-add-meet').addEventListener('click', async () => {
     const session = await getActiveMeetSession('Sign in to create a meet.');
     if (!session) return;
+    if (!requireAdminUser('Admin only: only owners can create meets.')) return;
 
     // Ensure we're in "create" mode
     document.getElementById('edit-meet-id').value = '';
@@ -2959,6 +2990,7 @@
   document.getElementById('save-meet-btn').addEventListener('click', async () => {
     const session = await getActiveMeetSession('Please sign in to save a meet.');
     if (!session) return;
+    if (!requireAdminUser('Admin only: only owners can save meets.')) return;
 
     const title = document.getElementById('meet-name').value.trim();
     const date  = document.getElementById('meet-date').value;
@@ -2982,8 +3014,8 @@
     try {
       if (editId) {
         const existing = meets.find(m => m.id === editId) || {};
-        if (!userOwnsMeet(existing)) {
-          toast('Only the meet creator can save changes.');
+        if (!currentUserIsAdmin()) {
+          toast('Admin only: only owners can save meet changes.');
           return;
         }
         await updateRecord('meets', editId, { ...existing, ...meet, createdBy: meetOwnerId(existing), rsvp: existing.rsvp || emptyRsvpCounts(), myRsvp: existing.myRsvp || null, checkedIn: !!existing.checkedIn });
@@ -3016,8 +3048,8 @@
     if (!session) return;
     const m = appData.meets.find(x => x.id === id);
     if (!m) return;
-    if (!userOwnsMeet(m)) {
-      toast('Only the meet creator can edit this meet.');
+    if (!currentUserIsAdmin()) {
+      toast('Admin only: only owners can edit meets.');
       renderMeets();
       return;
     }
@@ -3037,8 +3069,8 @@
     const session = await getActiveMeetSession('Sign in to delete a meet.');
     if (!session) return;
     const m = appData.meets.find(x => x.id === id);
-    if (!m || !userOwnsMeet(m)) {
-      toast('Only the meet creator can delete this meet.');
+    if (!m || !currentUserIsAdmin()) {
+      toast('Admin only: only owners can delete meets.');
       renderMeets();
       return;
     }
@@ -3404,7 +3436,7 @@
 
   function userCanDeletePhoto(photo) {
     const uid = currentUserId();
-    return !!uid && !!photo && photo.user_id === uid;
+    return !!uid && !!photo && (photo.user_id === uid || currentUserIsAdmin());
   }
 
   function populatePhotoMeetSelect() {
@@ -3524,8 +3556,12 @@
 
   async function deletePhoto(id) {
     const photo = appData.photos.find(p => p.id === id);
-    if (!currentUserId() || !userCanDeletePhoto(photo)) {
-      promptSignIn('Sign in as the photo owner to remove it.');
+    if (!currentUserId()) {
+      promptSignIn('Sign in as the photo owner or an admin to remove it.');
+      return;
+    }
+    if (!userCanDeletePhoto(photo)) {
+      toast('Admin only: you can delete only your own photos.');
       return;
     }
     if (!confirm('Delete this photo?')) return;
@@ -3570,7 +3606,7 @@
         </div>
         <div class="ann-ftr">
           <span>Posted by <strong>${esc(a.author)}</strong></span>
-          <button class="ann-ftr-del" onclick="deleteAnn('${a.id}')">🗑 Remove</button>
+          ${currentUserIsAdmin() ? `<button class="ann-ftr-del" onclick="deleteAnn('${a.id}')">🗑 Remove</button>` : ''}
         </div>
       </div>`).join('');
   }
@@ -3578,9 +3614,10 @@
   // Toggle add-announcement form
   document.getElementById('toggle-add-ann').addEventListener('click', () => {
     if (!currentUserId()) {
-      promptSignIn('Sign in to post news.');
+      promptSignIn('Sign in as an admin to post news.');
       return;
     }
+    if (!requireAdminUser('Admin only: only owners can post crew news.')) return;
     document.getElementById('add-ann-form').classList.toggle('open');
   });
   document.getElementById('cancel-ann-btn').addEventListener('click', () => {
@@ -3591,9 +3628,10 @@
   // Save announcement
   document.getElementById('save-ann-btn').addEventListener('click', async () => {
     if (!currentUserId()) {
-      promptSignIn('Sign in to post news.');
+      promptSignIn('Sign in as an admin to post news.');
       return;
     }
+    if (!requireAdminUser('Admin only: only owners can post crew news.')) return;
     const title = document.getElementById('ann-title').value.trim();
     const text  = document.getElementById('ann-text').value.trim();
     if (!title || !text) { toast('Title and message are required'); return; }
@@ -3629,9 +3667,10 @@
 
   async function deleteAnn(id) {
     if (!currentUserId()) {
-      promptSignIn('Sign in to remove crew news.');
+      promptSignIn('Sign in as an admin to remove crew news.');
       return;
     }
+    if (!requireAdminUser('Admin only: only owners can remove crew news.')) return;
     if (!confirm('Delete this announcement?')) return;
     try {
       await deleteRecord('announcements', id);
