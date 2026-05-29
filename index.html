@@ -283,7 +283,7 @@
       transition: background 0.15s, box-shadow 0.15s;
     }
     .btn-primary:hover { background: var(--accent-hi); box-shadow: 0 0 22px var(--accent-glow); }
-    .btn-primary:disabled, .btn-cancel:disabled, .btn-del:disabled, .btn-ghost:disabled, .btn-add:disabled {
+    .btn-primary:disabled, .btn-cancel:disabled, .btn-del:disabled, .btn-ghost:disabled, .btn-add:disabled, .btn-cruise:disabled {
       opacity: 0.58; cursor: not-allowed; box-shadow: none;
     }
     .btn-cancel {
@@ -698,6 +698,18 @@
       padding: 8px 12px; margin-bottom: 14px; line-height: 1.5;
     }
     .cruise-btns { display: flex; gap: 10px; }
+    .checkin-form { margin-top: -4px; }
+    .checkin-status {
+      display: none; margin: -4px 0 14px;
+      font-size: 0.78rem; color: var(--text-3); line-height: 1.45;
+    }
+    .checkin-status.show { display: block; }
+    .checkin-status.error { color: var(--red); }
+    .checkin-status.loading { color: var(--amber); }
+    .ci-main { min-width: 0; flex: 1; }
+    .ci-loc { font-size: 0.78rem; color: var(--accent); margin-top: 2px; }
+    .ci-note { font-size: 0.74rem; color: var(--text-2); margin-top: 2px; }
+    .ci-meet { font-size: 0.72rem; color: var(--text-3); margin-top: 2px; }
     .btn-cruise {
       flex: 1; padding: 10px; border-radius: var(--r-sm);
       font-family: var(--f-display); font-size: 0.78rem; font-weight: 700;
@@ -1156,10 +1168,33 @@
           Nothing is stored permanently once you stop sharing.
         </div>
         <div class="cruise-btns">
-          <!-- FUTURE: onclick → navigator.geolocation.watchPosition() + push to Supabase Realtime channel -->
           <button class="btn-cruise btn-start" id="cruise-start">📍 Start Cruise Mode</button>
-          <!-- FUTURE: onclick → clearWatch() + remove from Supabase Realtime channel -->
           <button class="btn-cruise btn-stop dimmed" id="cruise-stop">⏹ Stop Sharing</button>
+        </div>
+      </div>
+
+      <div class="inline-form checkin-form" id="checkin-form">
+        <div class="form-title">Start Check-In</div>
+        <div class="checkin-status" id="checkin-status"></div>
+        <div class="form-grid">
+          <div class="form-grp">
+            <label class="form-lbl" for="ci-location">Location / Spot Name *</label>
+            <input type="text" class="form-inp" id="ci-location" placeholder="e.g. Harbor Garage Level 2">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl" for="ci-note">Note</label>
+            <textarea class="form-inp" id="ci-note" placeholder="Optional: where to find you, entry gate, crew note…"></textarea>
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl" for="ci-meet">Upcoming Meet</label>
+            <select class="form-inp" id="ci-meet">
+              <option value="">No meet selected</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary" id="save-checkin-btn">Start Sharing</button>
+          <button class="btn-cancel" id="cancel-checkin-btn">Cancel</button>
         </div>
       </div>
 
@@ -1485,13 +1520,8 @@
       }
     ],
 
-    // Demo check-ins (shown in the Map tab)
-    // FUTURE: replace with live Supabase Realtime data
-    checkins: [
-      { name: 'Jake Torres',  car: '04 STI',     initials: 'JT', time: '9:14 PM', expiresIn: '3h 46m' },
-      { name: 'Ray Delgado',  car: '99 S15',     initials: 'RD', time: '9:22 PM', expiresIn: '3h 38m' },
-      { name: 'Maya Chen',    car: '22 Type R',  initials: 'MC', time: '9:41 PM', expiresIn: '3h 19m' }
-    ]
+    // Active Cruise Mode check-ins are loaded from Supabase.
+    checkins: []
   };
 
 
@@ -1778,6 +1808,7 @@
     const saveMeetBtn = document.getElementById('save-meet-btn');
     const garageNote = document.getElementById('garage-auth-note');
     const meetNote = document.getElementById('meet-auth-note');
+    const cruiseStartBtn = document.getElementById('cruise-start');
 
     panel.classList.toggle('signed-in', signedIn);
     trigger.classList.toggle('signed-in', signedIn);
@@ -1798,10 +1829,16 @@
     saveMeetBtn.disabled = !signedIn;
     garageNote.classList.toggle('show', !signedIn);
     meetNote.classList.toggle('show', !signedIn);
+    if (cruiseStartBtn) {
+      cruiseStartBtn.classList.toggle('dimmed', !signedIn);
+      cruiseStartBtn.setAttribute('aria-disabled', String(!signedIn));
+      cruiseStartBtn.title = signedIn ? 'Start a 4-hour check-in' : 'Sign in to start Cruise Mode';
+    }
 
     if (!signedIn) {
       document.getElementById('add-member-form').classList.remove('open');
       document.getElementById('add-meet-form').classList.remove('open');
+      document.getElementById('checkin-form').classList.remove('open');
       resetMemberForm();
       clearMeetForm();
     }
@@ -2043,12 +2080,43 @@
     return data || [];
   }
 
+  async function loadCheckins(showError = true) {
+    const nowIso = new Date().toISOString();
+    if (!isSupabaseReady() || !currentUserId()) {
+      appData.checkins = [];
+      return [];
+    }
+
+    const { data, error } = await supabaseClient
+      .from('check_ins')
+      .select('*')
+      .gt('expires_at', nowIso)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Could not load check-ins', error);
+      if (showError) toast(`Could not load check-ins: ${error.message}`);
+      appData.checkins = [];
+      return [];
+    }
+
+    appData.checkins = data || [];
+    return appData.checkins;
+  }
+
+  async function refreshCheckins(showError = false) {
+    await loadCheckins(showError);
+    renderCheckins();
+  }
+
   async function loadAllData(showToast = true, throwOnError = false) {
     if (!isSupabaseReady()) seedIfNeeded();
 
     const kinds = ['members','meets','photos','announcements'];
-    const results = await Promise.allSettled(kinds.map(kind => loadKind(kind, showToast, throwOnError)));
-    appData.checkins = lsGet(LS.checkins);
+    const results = await Promise.allSettled([
+      ...kinds.map(kind => loadKind(kind, showToast, throwOnError)),
+      loadCheckins(showToast)
+    ]);
 
     if (isSupabaseReady()) console.log('public garage data loaded');
 
@@ -2151,7 +2219,8 @@
       photos:   renderPhotos,
       announce: renderAnnouncements
     };
-    if (renders[name]) renders[name]();
+    if (name === 'map') refreshCheckins(false);
+    else if (renders[name]) renders[name]();
   }
 
   // Wire nav buttons
@@ -2723,43 +2792,196 @@
   //    FUTURE: Replace demo data with Supabase Realtime subscription
   // ==============================================================
 
-  function renderCheckins() {
-    const checkins = appData.checkins;
-    const el = document.getElementById('checkin-list');
+  function checkinMeetTitle(meetId) {
+    const meet = appData.meets.find(m => m.id === meetId);
+    return meet ? meet.title : '';
+  }
 
-    if (!checkins.length) {
-      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">📍</div><div class="empty-title">No One Checked In</div><div class="empty-sub">Check-ins show here when members arrive at a meet</div></div>`;
+  function myActiveCheckin() {
+    const uid = currentUserId();
+    const now = Date.now();
+    return uid ? appData.checkins.find(c => c.user_id === uid && new Date(c.expires_at).getTime() > now) : null;
+  }
+
+  function activeCheckins() {
+    const now = Date.now();
+    return appData.checkins.filter(c => new Date(c.expires_at).getTime() > now);
+  }
+
+  function checkinExpiresText(expiresAt) {
+    const ms = new Date(expiresAt).getTime() - Date.now();
+    if (!Number.isFinite(ms) || ms <= 0) return 'Expired';
+    const totalMinutes = Math.ceil(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+  }
+
+  function setCheckinStatus(type, msg) {
+    const el = document.getElementById('checkin-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `checkin-status${msg ? ' show' : ''}${type ? ' ' + type : ''}`;
+  }
+
+  function setCheckinSaving(isSaving) {
+    ['save-checkin-btn','cancel-checkin-btn','cruise-start','cruise-stop','ci-location','ci-note','ci-meet'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = isSaving;
+    });
+  }
+
+  function populateCheckinMeetOptions() {
+    const select = document.getElementById('ci-meet');
+    const today = new Date().toISOString().split('T')[0];
+    const upcoming = appData.meets
+      .filter(m => m.date >= today)
+      .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`));
+    select.innerHTML = '<option value="">No meet selected</option>' + upcoming.map(m =>
+      `<option value="${esc(m.id)}">${esc(fmtDate(m.date))}${m.time ? ` · ${esc(fmtTime(m.time))}` : ''} — ${esc(m.title)}</option>`
+    ).join('');
+  }
+
+  function openCheckinForm() {
+    populateCheckinMeetOptions();
+    setCheckinStatus('', '');
+    document.getElementById('checkin-form').classList.add('open');
+    document.getElementById('ci-location').focus();
+  }
+
+  function closeCheckinForm() {
+    document.getElementById('checkin-form').classList.remove('open');
+    document.getElementById('ci-location').value = '';
+    document.getElementById('ci-note').value = '';
+    document.getElementById('ci-meet').value = '';
+    setCheckinStatus('', '');
+  }
+
+  function renderCheckins() {
+    const checkins = activeCheckins();
+    const el = document.getElementById('checkin-list');
+    const mine = myActiveCheckin();
+    const startBtn = document.getElementById('cruise-start');
+    const stopBtn = document.getElementById('cruise-stop');
+
+    startBtn.style.opacity = mine ? '0.5' : '1';
+    startBtn.textContent = mine ? '📍 Cruise Mode Active' : '📍 Start Cruise Mode';
+    stopBtn.classList.toggle('dimmed', !mine);
+
+    if (!currentUserId()) {
+      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">🔒</div><div class="empty-title">Sign In To View Check-Ins</div><div class="empty-sub">Cruise Mode is only visible to signed-in CruiseCrew members.</div></div>`;
       return;
     }
 
-    el.innerHTML = checkins.map(c => `
-      <div class="ci-item">
-        <div class="ci-av">${esc(c.initials)}</div>
-        <div>
-          <div class="ci-name">${esc(c.name)}</div>
-          <div class="ci-car">${esc(c.car)} · Checked in ${esc(c.time)}</div>
+    if (!checkins.length) {
+      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">📍</div><div class="empty-title">No One Checked In</div><div class="empty-sub">Start Cruise Mode to share your current spot for 4 hours.</div></div>`;
+      return;
+    }
+
+    el.innerHTML = checkins.map(c => {
+      const meetTitle = checkinMeetTitle(c.meet_id);
+      return `<div class="ci-item">
+        <div class="ci-av">${esc(initials(c.display_name))}</div>
+        <div class="ci-main">
+          <div class="ci-name">${esc(c.display_name || 'CruiseCrew Member')}</div>
+          <div class="ci-car">${esc(c.car_label || 'Garage profile pending')}</div>
+          <div class="ci-loc">📍 ${esc(c.location_text)}</div>
+          ${c.note ? `<div class="ci-note">${esc(c.note)}</div>` : ''}
+          ${meetTitle ? `<div class="ci-meet">Meet: ${esc(meetTitle)}</div>` : ''}
         </div>
-        <div class="ci-exp">⏱ ${esc(c.expiresIn)}</div>
-      </div>`).join('');
+        <div class="ci-exp">⏱ ${esc(checkinExpiresText(c.expires_at))}</div>
+      </div>`;
+    }).join('');
   }
 
-  // Cruise mode placeholder behaviour
-  let cruiseOn = false;
-  document.getElementById('cruise-start').addEventListener('click', () => {
-    cruiseOn = true;
-    document.getElementById('cruise-start').style.opacity = '0.5';
-    document.getElementById('cruise-stop').classList.remove('dimmed');
-    toast('📍 Cruise Mode active — location sharing demo started');
-    // FUTURE: navigator.geolocation.watchPosition() → Supabase Realtime channel
-  });
-  document.getElementById('cruise-stop').addEventListener('click', () => {
-    if (!cruiseOn) return;
-    cruiseOn = false;
-    document.getElementById('cruise-start').style.opacity = '1';
-    document.getElementById('cruise-stop').classList.add('dimmed');
-    toast('⏹ Location sharing stopped');
-    // FUTURE: navigator.geolocation.clearWatch() + leave Supabase Realtime channel
-  });
+  async function startCheckin() {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to start Cruise Mode.');
+      return;
+    }
+    if (myActiveCheckin()) {
+      toast('You already have an active check-in.');
+      return;
+    }
+    openCheckinForm();
+  }
+
+  async function saveCheckin() {
+    const locationText = document.getElementById('ci-location').value.trim();
+    const note = document.getElementById('ci-note').value.trim();
+    const meetId = document.getElementById('ci-meet').value || null;
+    if (!locationText) { setCheckinStatus('error', 'Location / spot name is required.'); return; }
+    if (!currentUserId()) { promptSignIn('Sign in to start Cruise Mode.'); return; }
+
+    const profile = myMemberProfile();
+    const displayName = profile ? profile.name : (currentUserEmail() || 'CruiseCrew Member').split('@')[0];
+    const carLabel = profile ? [profile.year, profile.make, profile.model].filter(Boolean).join(' ') : '';
+    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+    const payload = {
+      user_id: currentUserId(),
+      display_name: displayName,
+      car_label: carLabel,
+      location_text: locationText,
+      note,
+      meet_id: meetId,
+      expires_at: expiresAt
+    };
+
+    try {
+      setCheckinSaving(true);
+      setCheckinStatus('loading', 'Starting your 4-hour check-in...');
+      if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
+      const existing = myActiveCheckin();
+      if (existing) {
+        const { error } = await supabaseClient.from('check_ins').update(payload).eq('id', existing.id).eq('user_id', currentUserId());
+        if (error) throw error;
+      } else {
+        const { error } = await supabaseClient.from('check_ins').insert([payload]);
+        if (error) throw error;
+      }
+      closeCheckinForm();
+      await refreshCheckins(false);
+      toast('📍 Cruise Mode active for 4 hours');
+    } catch (err) {
+      console.error('Could not start check-in', err);
+      setCheckinStatus('error', `Could not start check-in: ${err.message}`);
+    } finally {
+      setCheckinSaving(false);
+      updateAuthUI();
+    }
+  }
+
+  async function stopSharing() {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to manage your check-in.');
+      return;
+    }
+    const mine = myActiveCheckin();
+    if (!mine) {
+      toast('No active check-in to stop.');
+      return;
+    }
+    try {
+      setCheckinSaving(true);
+      if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
+      const { error } = await supabaseClient.from('check_ins').delete().eq('id', mine.id).eq('user_id', currentUserId());
+      if (error) throw error;
+      await refreshCheckins(false);
+      toast('⏹ Location sharing stopped');
+    } catch (err) {
+      console.error('Could not stop check-in', err);
+      toast(`Could not stop sharing: ${err.message}`);
+    } finally {
+      setCheckinSaving(false);
+      updateAuthUI();
+    }
+  }
+
+  document.getElementById('cruise-start').addEventListener('click', startCheckin);
+  document.getElementById('cruise-stop').addEventListener('click', stopSharing);
+  document.getElementById('save-checkin-btn').addEventListener('click', saveCheckin);
+  document.getElementById('cancel-checkin-btn').addEventListener('click', closeCheckinForm);
+
 
 
   // ==============================================================
