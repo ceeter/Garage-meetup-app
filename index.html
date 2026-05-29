@@ -1071,6 +1071,7 @@
         <div class="sec-title">Meets <em>&amp;</em> Events</div>
         <button class="btn-add" id="toggle-add-meet" title="Add Meet" aria-label="Add Meet">+</button>
       </div>
+      <div class="auth-required-note" id="meet-auth-note">Sign in to create a meet.</div>
 
       <!-- Add/Edit Meet inline form -->
       <div class="inline-form" id="add-meet-form">
@@ -1508,9 +1509,10 @@
         location: m.location, description: m.desc || '',
         rsvp: m.rsvp || emptyRsvpCounts(),
         my_rsvp: m.myRsvp || null,
+        created_by: m.created_by || m.createdBy || currentSessionUserId() || currentUserId() || null,
         checked_in: !!m.checkedIn
       }),
-      fromDb: m => ({ ...m, desc: m.description || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, rsvp: normalizeRsvpCounts(m.rsvp) })
+      fromDb: m => ({ ...m, desc: m.description || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
     },
     photos: { table: 'photo_drops', order: 'created_at' },
     announcements: { table: 'announcements', order: 'created_at' }
@@ -1730,7 +1732,10 @@
     const signInBtn = document.getElementById('auth-signin-btn');
     const signUpBtn = document.getElementById('auth-signup-btn');
     const addMemberBtn = document.getElementById('toggle-add-member');
+    const addMeetBtn = document.getElementById('toggle-add-meet');
+    const saveMeetBtn = document.getElementById('save-meet-btn');
     const garageNote = document.getElementById('garage-auth-note');
+    const meetNote = document.getElementById('meet-auth-note');
 
     panel.classList.toggle('signed-in', signedIn);
     trigger.classList.toggle('signed-in', signedIn);
@@ -1744,11 +1749,18 @@
     addMemberBtn.disabled = !signedIn;
     addMemberBtn.title = signedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
+    addMeetBtn.disabled = !signedIn;
+    addMeetBtn.title = signedIn ? 'Add Meet' : 'Sign in to create a meet';
+    addMeetBtn.setAttribute('aria-label', addMeetBtn.title);
+    saveMeetBtn.disabled = !signedIn;
     garageNote.classList.toggle('show', !signedIn);
+    meetNote.classList.toggle('show', !signedIn);
 
     if (!signedIn) {
       document.getElementById('add-member-form').classList.remove('open');
+      document.getElementById('add-meet-form').classList.remove('open');
       resetMemberForm();
+      clearMeetForm();
     }
   }
 
@@ -2011,6 +2023,9 @@
     if (kind === 'members' && !row.user_id) {
       row.user_id = currentSessionUserId() || currentUserId();
     }
+    if (kind === 'meets' && !row.createdBy && !row.created_by) {
+      row.createdBy = currentSessionUserId() || currentUserId();
+    }
 
     const { data, error } = await supabaseClient
       .from(DB[kind].table)
@@ -2019,7 +2034,8 @@
       .single();
 
     if (error) {
-      console.error(`Could not add ${kind}`, error);
+      if (kind === 'meets') console.error('Supabase meet insert failed', error);
+      else console.error(`Could not add ${kind}`, error);
       throw error;
     }
     return normalize(kind, data);
@@ -2427,8 +2443,38 @@
     }).join('');
   }
 
+  async function getActiveMeetSession(message) {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      toast(message);
+      return null;
+    }
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) {
+      console.error('Could not load Supabase auth session for meet action', error);
+      toast(`Could not verify sign-in: ${error.message}`);
+      return null;
+    }
+
+    const session = data && data.session ? data.session : null;
+    appData.currentSession = session;
+    if (!session || !session.user) {
+      appData.currentUser = null;
+      updateAuthUI();
+      toast(message);
+      return null;
+    }
+
+    appData.currentUser = session.user;
+    updateAuthUI();
+    return session;
+  }
+
   // Toggle add-meet form
-  document.getElementById('toggle-add-meet').addEventListener('click', () => {
+  document.getElementById('toggle-add-meet').addEventListener('click', async () => {
+    const session = await getActiveMeetSession('Sign in to create a meet.');
+    if (!session) return;
+
     // Ensure we're in "create" mode
     document.getElementById('edit-meet-id').value = '';
     document.getElementById('meet-form-ttl').textContent = 'Create Meet';
@@ -2442,6 +2488,9 @@
 
   // Save (create or update) meet
   document.getElementById('save-meet-btn').addEventListener('click', async () => {
+    const session = await getActiveMeetSession('Please sign in to save a meet.');
+    if (!session) return;
+
     const title = document.getElementById('meet-name').value.trim();
     const date  = document.getElementById('meet-date').value;
     const loc   = document.getElementById('meet-loc').value.trim();
@@ -2457,7 +2506,8 @@
       desc:     document.getElementById('meet-desc').value.trim(),
       rsvp:     emptyRsvpCounts(),
       myRsvp:   null,
-      checkedIn: false
+      checkedIn: false,
+      createdBy: session.user.id
     };
 
     try {
@@ -2475,6 +2525,7 @@
       renderMeets();
       renderHome();
     } catch (err) {
+      console.error('Supabase meet save failed', err);
       toast(`Could not save meet: ${err.message}`);
     }
   });
