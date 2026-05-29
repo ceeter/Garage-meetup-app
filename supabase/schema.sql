@@ -130,6 +130,16 @@ create index if not exists photo_drops_user_id_idx on public.photo_drops(user_id
 create index if not exists photo_drops_created_at_idx on public.photo_drops(created_at desc);
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
 
+-- Admin/owner controls: replace your_email_here with your signed-in Supabase Auth email
+-- and keep this list in sync with ADMIN_EMAILS in index.html.
+create or replace function public.is_admin_user()
+returns boolean
+language sql
+stable
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', '')) = any (array['your_email_here']);
+$$;
+
 create or replace function public.set_member_user_id()
 returns trigger
 language plpgsql
@@ -213,7 +223,7 @@ create policy "users can update own check in" on public.check_ins
 create policy "users can delete own check in" on public.check_ins
   for delete to authenticated using (auth.uid() = user_id);
 
--- Meets are publicly readable, but signed-in users can only create or manage their own meet rows.
+-- Meets are publicly readable, but only admin emails can create or manage meet rows.
 drop policy if exists "anon can read meets" on public.meets;
 drop policy if exists "anon can insert meets" on public.meets;
 drop policy if exists "anon can update meets" on public.meets;
@@ -223,17 +233,20 @@ drop policy if exists "anon and authenticated can read meets" on public.meets;
 drop policy if exists "users can insert own meet" on public.meets;
 drop policy if exists "users can update own meet" on public.meets;
 drop policy if exists "users can delete own meet" on public.meets;
+drop policy if exists "admins can insert meets" on public.meets;
+drop policy if exists "admins can update meets" on public.meets;
+drop policy if exists "admins can delete meets" on public.meets;
 
 create policy "anon and authenticated can read meets" on public.meets
   for select to anon, authenticated using (true);
-create policy "users can insert own meet" on public.meets
-  for insert to authenticated with check (auth.uid() = created_by);
-create policy "users can update own meet" on public.meets
-  for update to authenticated using (auth.uid() = created_by) with check (auth.uid() = created_by);
-create policy "users can delete own meet" on public.meets
-  for delete to authenticated using (auth.uid() = created_by);
+create policy "admins can insert meets" on public.meets
+  for insert to authenticated with check (public.is_admin_user());
+create policy "admins can update meets" on public.meets
+  for update to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
+create policy "admins can delete meets" on public.meets
+  for delete to authenticated using (public.is_admin_user());
 
--- Photo drops are public to view, but only signed-in users can create or manage their own drops.
+-- Photo drops are public to view; signed-in users manage their own drops, and admins can moderate deletes.
 drop policy if exists "anon can read photo drops" on public.photo_drops;
 drop policy if exists "anon can insert photo drops" on public.photo_drops;
 drop policy if exists "anon can update photo drops" on public.photo_drops;
@@ -250,9 +263,22 @@ create policy "users can insert own photo drops" on public.photo_drops
 create policy "users can update own photo drops" on public.photo_drops
   for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "users can delete own photo drops" on public.photo_drops
-  for delete to authenticated using (auth.uid() = user_id);
+  for delete to authenticated using (auth.uid() = user_id or public.is_admin_user());
 
-create policy "anon can read announcements" on public.announcements for select to anon, authenticated using (true);
-create policy "anon can insert announcements" on public.announcements for insert to anon, authenticated with check (true);
-create policy "anon can update announcements" on public.announcements for update to anon, authenticated using (true) with check (true);
-create policy "anon can delete announcements" on public.announcements for delete to anon, authenticated using (true);
+-- Announcements are publicly readable, but only admin emails can create, update, or delete them.
+drop policy if exists "anon can read announcements" on public.announcements;
+drop policy if exists "anon can insert announcements" on public.announcements;
+drop policy if exists "anon can update announcements" on public.announcements;
+drop policy if exists "anon can delete announcements" on public.announcements;
+drop policy if exists "admins can insert announcements" on public.announcements;
+drop policy if exists "admins can update announcements" on public.announcements;
+drop policy if exists "admins can delete announcements" on public.announcements;
+
+create policy "anon can read announcements" on public.announcements
+  for select to anon, authenticated using (true);
+create policy "admins can insert announcements" on public.announcements
+  for insert to authenticated with check (public.is_admin_user());
+create policy "admins can update announcements" on public.announcements
+  for update to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
+create policy "admins can delete announcements" on public.announcements
+  for delete to authenticated using (public.is_admin_user());
