@@ -3235,10 +3235,11 @@
   function renderHome() {
     const members       = scopedMembers();
     const meets         = scopedMeets();
+    const allMeets      = globalMeets();
     const photos        = scopedPhotos();
     const announcements = appData.announcements || [];
     const checkins      = activeCheckins();
-    const upcomingMeets = upcomingMeetsList(meets);
+    const upcomingMeets = upcomingMeetsList(allMeets);
 
     // Stats from the app's existing Supabase-backed tables.
     document.getElementById('stat-members').textContent  = members.length;
