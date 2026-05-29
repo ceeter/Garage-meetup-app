@@ -137,7 +137,7 @@ returns boolean
 language sql
 stable
 as $$
-  select lower(coalesce(auth.jwt() ->> 'email', '')) = any (array['your_email_here']);
+  select lower(coalesce(auth.jwt() ->> 'email', '')) = any (array['chancecampbell97@live.com']);
 $$;
 
 create or replace function public.set_member_user_id()
