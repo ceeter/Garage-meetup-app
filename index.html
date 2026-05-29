@@ -1810,7 +1810,7 @@
     meets: {
       table: 'meets', order: 'date',
       toDb: m => ({
-        id: m.id, group_id: m.group_id || selectedGroupId() || null, title: m.title, date: m.date, time: m.time || null,
+        id: m.id, group_id: m.group_id || null, title: m.title, date: m.date, time: m.time || null,
         location: m.location, description: m.desc || '',
         rsvp: m.rsvp || emptyRsvpCounts(),
         my_rsvp: m.myRsvp || null,
@@ -1939,9 +1939,13 @@
     return appData.garageView === 'global' ? (appData.members || []) : scopedMembers();
   }
 
+  function globalMeets() {
+    return appData.meets || [];
+  }
+
   function scopedMeets() {
     const gid = selectedGroupId();
-    return gid ? (appData.meets || []).filter(m => m.group_id === gid) : (appData.meets || []);
+    return gid ? globalMeets().filter(m => m.group_id === gid) : globalMeets();
   }
 
   function scopedPhotos() {
@@ -3329,11 +3333,14 @@
       txt: `<strong>${esc(m.title)}</strong> meet was created for ${esc(fmtDate(m.date))}`
     }));
 
-    (appData.rsvps || []).forEach(r => items.push({
-      icon: '✅',
-      date: activityDate(r),
-      txt: `<strong>${esc(actorNameForUser(r))}</strong> updated RSVP to <strong>${esc(rsvpLabel(normalizeRsvpStatus(r.status)))}</strong> for ${esc(meetTitles[r.meet_id] || 'a meet')}`
-    }));
+    (appData.rsvps || []).forEach(r => {
+      if (selectedGroupId() && (!r || !meetTitles[r.meet_id])) return;
+      items.push({
+        icon: '✅',
+        date: activityDate(r),
+        txt: `<strong>${esc(actorNameForUser(r))}</strong> updated RSVP to <strong>${esc(rsvpLabel(normalizeRsvpStatus(r.status)))}</strong> for ${esc(meetTitles[r.meet_id] || 'a meet')}`
+      });
+    });
 
     (members || []).forEach(m => items.push({
       icon: '🚗',
@@ -3634,7 +3641,7 @@
   }
 
   function meetCheckedInRoster(meetId) {
-    return activeCheckins()
+    return globalActiveCheckins()
       .filter(row => row && row.meet_id === meetId)
       .map(row => ({ name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -3689,11 +3696,11 @@
   }
 
   function renderMeets() {
-    const meets = scopedMeets();
+    const meets = globalMeets();
     const el = document.getElementById('meets-list');
 
     if (!meets.length) {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">🏁</div><div class="empty-title">No meets planned for this crew yet.</div><div class="empty-sub">Check the global view or ask an admin to schedule one.</div></div>`;
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🏁</div><div class="empty-title">No meets planned yet.</div><div class="empty-sub">Check back soon or ask an admin to schedule one.</div></div>`;
       return;
     }
 
@@ -3703,7 +3710,7 @@
     el.innerHTML = sorted.map(m => {
       const checkedInRoster = meetCheckedInRoster(m.id);
       const checkedInCount = checkedInRoster.length;
-      const myCheckin = currentUserId() && activeCheckins().some(row => row && row.meet_id === m.id && row.user_id === currentUserId());
+      const myCheckin = currentUserId() && globalActiveCheckins().some(row => row && row.meet_id === m.id && row.user_id === currentUserId());
       const myRsvp = canRsvp ? (m.myRsvp || null) : null;
       const canManageMeet = currentUserIsAdmin();
       const rosterExpanded = appData.expandedMeetRosters.has(m.id);
@@ -4000,9 +4007,13 @@
     return uid ? appData.checkins.find(c => c.user_id === uid && new Date(c.expires_at).getTime() > now) : null;
   }
 
-  function activeCheckins() {
+  function globalActiveCheckins() {
     const now = Date.now();
-    return scopedCheckins().filter(c => new Date(c.expires_at).getTime() > now);
+    return (appData.checkins || []).filter(c => new Date(c.expires_at).getTime() > now);
+  }
+
+  function activeCheckins() {
+    return scopedCheckins().filter(c => new Date(c.expires_at).getTime() > Date.now());
   }
 
   function checkinExpiresText(expiresAt) {
