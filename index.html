@@ -994,6 +994,66 @@
       transition: opacity 0.15s;
     }
     .photo-del:hover { opacity: 1; }
+    .photo-file-wrap {
+      display: grid; gap: 8px;
+    }
+    .photo-file-input {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px;
+      color: var(--text-2);
+      border: 1px dashed var(--border2);
+      border-radius: var(--r-sm);
+      background: var(--bg-input);
+    }
+    .photo-file-input::file-selector-button {
+      margin-right: 10px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-family: var(--f-display);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 9px 12px;
+    }
+    .photo-preview {
+      display: none;
+      width: 100%;
+      aspect-ratio: 4/3;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: linear-gradient(135deg, #181820 0%, #0E0E14 100%);
+    }
+    .photo-preview.show { display: block; }
+    .photo-help, .photo-status {
+      font-size: 0.74rem;
+      color: var(--text-3);
+      line-height: 1.45;
+    }
+    .photo-status.show { margin-top: 10px; }
+    .photo-status.error { color: var(--red); }
+    .photo-status.success { color: var(--green); }
+    .photo-status.busy { color: var(--amber); }
+    .photo-advanced {
+      grid-column: 1 / -1;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: rgba(255,255,255,0.025);
+      padding: 10px 12px;
+    }
+    .photo-advanced summary {
+      cursor: pointer;
+      color: var(--text-2);
+      font-family: var(--f-display);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .photo-advanced .form-grp { margin-top: 10px; }
 
     /* ============================================================
        ANNOUNCEMENTS
@@ -1489,7 +1549,6 @@
 
     <!-- ======================================================
          PHOTOS TAB
-         FUTURE: Replace URL input with Supabase Storage upload.
          ====================================================== -->
     <section class="tab-section" id="tab-photos">
 
@@ -1499,27 +1558,39 @@
       </div>
 
       <!-- Add Photo inline form -->
-      <!-- FUTURE: Add a real <input type="file"> and upload to Supabase Storage -->
       <div class="inline-form" id="add-photo-form">
         <div class="form-title">Drop a Photo</div>
         <div class="form-grid">
           <div class="form-grp">
-            <label class="form-lbl">Meet</label>
+            <label class="form-lbl" for="ph-meet">Meet</label>
             <select class="form-inp" id="ph-meet"></select>
           </div>
           <div class="form-grp">
-            <label class="form-lbl">Spot / location</label>
+            <label class="form-lbl" for="ph-spot">Spot / location</label>
             <input type="text" class="form-inp" id="ph-spot" placeholder="e.g. Harbor garage level 2">
           </div>
           <div class="form-grp">
-            <label class="form-lbl">Photo URL *</label>
-            <input type="url" class="form-inp" id="ph-url" placeholder="https://...jpg">
+            <label class="form-lbl" for="ph-file">Photo *</label>
+            <div class="photo-file-wrap">
+              <input type="file" class="photo-file-input" id="ph-file" accept="image/jpeg,image/png,image/webp">
+              <img class="photo-preview" id="ph-preview" alt="Selected photo preview">
+              <div class="photo-help">JPEG, PNG, or WebP only. Maximum file size is 10 MB.</div>
+            </div>
           </div>
           <div class="form-grp">
-            <label class="form-lbl">Caption</label>
+            <label class="form-lbl" for="ph-cap">Caption</label>
             <input type="text" class="form-inp" id="ph-cap" placeholder="e.g. Friday night vibes 🔥">
           </div>
+          <details class="photo-advanced">
+            <summary>Advanced: paste image URL</summary>
+            <div class="form-grp">
+              <label class="form-lbl" for="ph-url">Image URL</label>
+              <input type="url" class="form-inp" id="ph-url" placeholder="https://...jpg">
+              <div class="photo-help">Use only if you already have a hosted image. Device uploads are recommended.</div>
+            </div>
+          </details>
         </div>
+        <div class="photo-status" id="photo-status" role="status" aria-live="polite"></div>
         <div class="form-actions">
           <button class="btn-primary" id="save-photo-btn">Drop It</button>
           <button class="btn-cancel"  id="cancel-photo-btn">Cancel</button>
@@ -1822,7 +1893,7 @@
     photos: {
       table: 'photo_drops',
       order: 'created_at',
-      select: 'id, group_id, meet_id, user_id, member_id, image_url, caption, display_name, car_label, spot_label, created_at',
+      select: 'id, group_id, meet_id, user_id, member_id, image_url, storage_path, caption, display_name, car_label, spot_label, created_at',
       toDb: p => ({
         id: p.id,
         group_id: p.group_id || selectedGroupId() || null,
@@ -1830,6 +1901,7 @@
         user_id: p.user_id || currentSessionUserId() || currentUserId(),
         member_id: p.member_id || null,
         image_url: p.image_url,
+        storage_path: p.storage_path || null,
         caption: String(p.caption || '').trim() || null,
         display_name: p.display_name || '',
         car_label: p.car_label || '',
@@ -2027,6 +2099,13 @@
       myRsvp: mineByMeet[meet.id] || null
     }));
   }
+
+  const PHOTO_BUCKET = 'cruisecrew-photos';
+  const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+  const PHOTO_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+  let selectedPhotoPreviewUrl = '';
+  let photoUploadBusy = false;
 
   let authStateUnsubscribe = null;
   let lastHandledAuthKey = '';
@@ -4309,6 +4388,93 @@
   }
   window.photoFallback = photoFallback;
 
+  function setPhotoStatus(type, message) {
+    const el = document.getElementById('photo-status');
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = `photo-status${message ? ' show' : ''}${type ? ' ' + type : ''}`;
+  }
+
+  function setPhotoUploadBusy(isBusy) {
+    photoUploadBusy = !!isBusy;
+    ['save-photo-btn','cancel-photo-btn','ph-file','ph-url','ph-meet','ph-spot','ph-cap'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = photoUploadBusy;
+    });
+    const saveBtn = document.getElementById('save-photo-btn');
+    if (saveBtn) saveBtn.textContent = photoUploadBusy ? 'Uploading…' : 'Drop It';
+  }
+
+  function photoFileExtension(file) {
+    const byType = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    if (byType[file.type]) return byType[file.type];
+    const ext = String(file.name || '').split('.').pop().toLowerCase();
+    return ['jpg','jpeg','png','webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'jpg';
+  }
+
+  function validatePhotoFile(file) {
+    if (!file) return 'Choose a photo from your device before dropping it.';
+    if (!PHOTO_ALLOWED_TYPES.includes(file.type)) return 'Please choose a JPEG, PNG, or WebP image.';
+    if (file.size > PHOTO_MAX_BYTES) return 'That photo is larger than 10 MB. Please choose a smaller image.';
+    return '';
+  }
+
+  async function currentSupabaseAuthUser() {
+    if (!isSupabaseReady() || !supabaseClient.auth) throw new Error('Photo uploads need a Supabase connection.');
+    const { data, error } = await supabaseClient.auth.getUser();
+    if (error) throw error;
+    if (!data || !data.user) throw new Error('Sign in before dropping a photo.');
+    appData.currentUser = data.user;
+    if (!appData.currentSession) await loadCurrentSession().catch(() => null);
+    return data.user;
+  }
+
+  async function uploadPhotoFile(user, file) {
+    const extension = photoFileExtension(file);
+    const uuid = window.crypto && crypto.randomUUID ? crypto.randomUUID() : genId().replace(/^_/, '');
+    const path = `${user.id}/${Date.now()}-${uuid}.${extension}`;
+    const { error } = await supabaseClient.storage.from(PHOTO_BUCKET).upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type
+    });
+    if (error) throw error;
+    const { data } = supabaseClient.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+    const publicUrl = data && data.publicUrl;
+    if (!publicUrl) throw new Error('Upload succeeded, but Supabase did not return a public URL.');
+    return { publicUrl, path };
+  }
+
+  async function cleanupUploadedPhoto(path) {
+    if (!path || !isSupabaseReady()) return;
+    const { error } = await supabaseClient.storage.from(PHOTO_BUCKET).remove([path]);
+    if (error) console.warn('Could not clean up uploaded photo after failed save', error);
+  }
+
+  function updatePhotoPreview() {
+    const input = document.getElementById('ph-file');
+    const preview = document.getElementById('ph-preview');
+    const file = input && input.files && input.files[0];
+    if (selectedPhotoPreviewUrl) URL.revokeObjectURL(selectedPhotoPreviewUrl);
+    selectedPhotoPreviewUrl = '';
+    if (!preview) return;
+    preview.removeAttribute('src');
+    preview.classList.remove('show');
+    setPhotoStatus('', '');
+    if (!file) return;
+    const validation = validatePhotoFile(file);
+    if (validation) {
+      setPhotoStatus('error', validation);
+      if (input) input.value = '';
+      return;
+    }
+    selectedPhotoPreviewUrl = URL.createObjectURL(file);
+    preview.src = selectedPhotoPreviewUrl;
+    preview.classList.add('show');
+  }
+
+  document.getElementById('ph-file').addEventListener('change', updatePhotoPreview);
+
   // Toggle add-photo form
   document.getElementById('toggle-add-photo').addEventListener('click', () => {
     if (!currentUserId()) {
@@ -4325,51 +4491,90 @@
 
   // Save photo
   document.getElementById('save-photo-btn').addEventListener('click', async () => {
-    if (!currentUserId()) {
-      promptSignIn('Sign in to drop a photo.');
-      return;
-    }
-    const meetId = document.getElementById('ph-meet').value || null;
-    const imageUrl = document.getElementById('ph-url').value.trim();
-    const spotLabel = document.getElementById('ph-spot').value.trim();
-    const caption = document.getElementById('ph-cap').value.trim();
-    const meet = meetId ? appData.meets.find(m => m.id === meetId) : null;
-    if (meetId && !meet) { toast('Choose a valid meet for this photo'); return; }
-    if (!imageUrl) { toast('Photo URL is required'); return; }
-
-    const member = myMemberProfile();
-    const photo = {
-      id: genId(),
-      group_id: (meet && meet.group_id) || selectedGroupId() || null,
-      meet_id: meetId,
-      user_id: currentUserId(),
-      member_id: member ? member.id : null,
-      image_url: imageUrl,
-      caption: caption || null,
-      spot_label: spotLabel || null,
-      display_name: currentActorName(),
-      car_label: member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : ''
-    };
-
+    if (photoUploadBusy) return;
+    let uploadedPath = '';
     try {
+      const user = await currentSupabaseAuthUser();
+      const meetId = document.getElementById('ph-meet').value || null;
+      const fileInput = document.getElementById('ph-file');
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      const pastedUrl = document.getElementById('ph-url').value.trim();
+      const spotLabel = document.getElementById('ph-spot').value.trim();
+      const caption = document.getElementById('ph-cap').value.trim();
+      const meet = meetId ? appData.meets.find(m => m.id === meetId) : null;
+      if (meetId && !meet) { setPhotoStatus('error', 'Choose a valid meet for this photo.'); return; }
+
+      let imageUrl = pastedUrl;
+      let storagePath = null;
+      if (file) {
+        const validation = validatePhotoFile(file);
+        if (validation) { setPhotoStatus('error', validation); return; }
+        setPhotoUploadBusy(true);
+        setPhotoStatus('busy', 'Uploading your photo…');
+        const uploaded = await uploadPhotoFile(user, file);
+        imageUrl = uploaded.publicUrl;
+        storagePath = uploaded.path;
+        uploadedPath = uploaded.path;
+        setPhotoStatus('busy', 'Upload complete. Saving photo drop…');
+      } else if (!imageUrl) {
+        setPhotoStatus('error', 'Choose a photo from your device before dropping it.');
+        return;
+      } else {
+        setPhotoUploadBusy(true);
+        setPhotoStatus('busy', 'Saving pasted image URL…');
+      }
+
+      const member = myMemberProfile();
+      const photo = {
+        id: genId(),
+        group_id: (meet && meet.group_id) || selectedGroupId() || null,
+        meet_id: meetId,
+        user_id: user.id,
+        member_id: member ? member.id : null,
+        image_url: imageUrl,
+        storage_path: storagePath,
+        caption: caption || null,
+        spot_label: spotLabel || null,
+        display_name: currentActorName(),
+        car_label: member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : ''
+      };
+
       await addRecord('photos', photo);
+      uploadedPath = '';
       await loadKind('photos');
-      clearPhotoForm();
-      document.getElementById('add-photo-form').classList.remove('open');
+      clearPhotoForm({ preserveStatus: true });
+      setPhotoStatus('success', 'Photo dropped successfully.');
       renderPhotos();
       renderHome();
       toast(`Photo dropped for ${meet ? meet.title : (spotLabel || 'General Photo Drop')} 📸`);
     } catch (err) {
-      toast(`Could not save photo: ${err.message}`);
+      if (uploadedPath) await cleanupUploadedPhoto(uploadedPath);
+      const message = err && err.message ? err.message : 'Unknown error';
+      setPhotoStatus('error', `Could not drop photo: ${message}`);
+      toast(`Could not drop photo: ${message}`);
+      if (/sign in/i.test(message)) promptSignIn('Sign in to drop a photo.');
+    } finally {
+      setPhotoUploadBusy(false);
     }
   });
 
-  function clearPhotoForm() {
+  function clearPhotoForm({ preserveStatus = false } = {}) {
     ['ph-url','ph-spot','ph-cap'].forEach(id => {
-      document.getElementById(id).value = '';
+      const el = document.getElementById(id);
+      if (el) el.value = '';
     });
+    const fileInput = document.getElementById('ph-file');
+    if (fileInput) fileInput.value = '';
+    const preview = document.getElementById('ph-preview');
+    if (selectedPhotoPreviewUrl) URL.revokeObjectURL(selectedPhotoPreviewUrl);
+    selectedPhotoPreviewUrl = '';
+    if (preview) {
+      preview.removeAttribute('src');
+      preview.classList.remove('show');
+    }
     const meetSelect = document.getElementById('ph-meet');
     if (meetSelect) meetSelect.value = '';
+    if (!preserveStatus) setPhotoStatus('', '');
   }
 
   async function deletePhoto(id) {
@@ -4385,6 +4590,7 @@
     if (!confirm('Delete this photo?')) return;
     try {
       await deleteRecord('photos', id);
+      if (photo.storage_path) cleanupUploadedPhoto(photo.storage_path);
       await loadKind('photos');
       renderPhotos();
       renderHome();

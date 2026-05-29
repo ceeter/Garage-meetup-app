@@ -101,6 +101,7 @@ create table if not exists public.photo_drops (
   member_id uuid references public.members(id) on delete set null,
   group_id uuid references public.groups(id) on delete set null,
   image_url text not null,
+  storage_path text,
   caption text default '',
   spot_label text default '',
   display_name text default '',
@@ -148,6 +149,7 @@ alter table public.photo_drops add column if not exists user_id uuid references 
 alter table public.photo_drops add column if not exists member_id uuid references public.members(id) on delete set null;
 alter table public.photo_drops add column if not exists group_id uuid references public.groups(id) on delete set null;
 alter table public.photo_drops add column if not exists image_url text;
+alter table public.photo_drops add column if not exists storage_path text;
 alter table public.photo_drops add column if not exists caption text default '';
 alter table public.photo_drops add column if not exists spot_label text default '';
 alter table public.photo_drops add column if not exists display_name text default '';
@@ -199,6 +201,7 @@ create index if not exists meets_group_id_idx on public.meets(group_id);
 create index if not exists photo_drops_meet_id_idx on public.photo_drops(meet_id);
 create index if not exists photo_drops_user_id_idx on public.photo_drops(user_id);
 create index if not exists photo_drops_group_id_idx on public.photo_drops(group_id);
+create index if not exists photo_drops_storage_path_idx on public.photo_drops(storage_path);
 create index if not exists photo_drops_created_at_idx on public.photo_drops(created_at desc);
 create unique index if not exists members_user_id_key on public.members(user_id) where user_id is not null;
 
