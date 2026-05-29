@@ -1654,27 +1654,23 @@
       fromDb: m => ({ ...m, desc: m.description || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
     },
     photos: {
-      table: 'photo_drops', order: 'created_at',
+      table: 'photo_drops',
+      order: 'created_at',
+      select: 'id, meet_id, user_id, member_id, image_url, caption, display_name, car_label, spot_label, created_at',
       toDb: p => ({
         id: p.id,
-        meet_id: p.meet_id || p.meetId || null,
+        meet_id: p.meet_id || null,
         user_id: p.user_id || currentSessionUserId() || currentUserId(),
-        member_id: p.member_id || p.memberId || null,
-        image_url: p.image_url || p.imageUrl || p.url,
-        caption: p.caption || '',
-        spot_label: p.spot_label || p.spotLabel || '',
-        display_name: p.display_name || p.author || '',
-        car_label: p.car_label || p.car || ''
+        member_id: p.member_id || null,
+        image_url: p.image_url,
+        caption: String(p.caption || '').trim() || null,
+        display_name: p.display_name || '',
+        car_label: p.car_label || '',
+        spot_label: String(p.spot_label || '').trim() || null
       }),
       fromDb: p => ({
         ...p,
-        meetId: p.meet_id || null,
-        memberId: p.member_id || null,
-        imageUrl: p.image_url || p.url || '',
-        spotLabel: p.spot_label || '',
-        displayName: p.display_name || p.author || '',
-        carLabel: p.car_label || p.car || '',
-        date: p.created_at || p.date || null
+        date: p.created_at || null
       })
     },
     announcements: { table: 'announcements', order: 'created_at' }
@@ -2207,7 +2203,7 @@
     const ascending = kind === 'meets';
     const { data, error } = await supabaseClient
       .from(cfg.table)
-      .select('*')
+      .select(cfg.select || '*')
       .order(cfg.order, { ascending });
 
     if (error) {
@@ -2529,7 +2525,7 @@
     });
 
     (photos || []).forEach(p => {
-      const meetId = p.meet_id || p.meetId;
+      const meetId = p.meet_id;
       const photoPlace = meetId ? (meetTitles[meetId] || 'a meet') : photoDropContext(p);
       items.push({
         icon: '📸',
@@ -3376,20 +3372,20 @@
   }
 
   function photoDropContext(photo) {
-    const meetId = photo && (photo.meet_id || photo.meetId);
+    const meetId = photo && photo.meet_id;
     if (meetId) return meetTitleById(meetId);
-    const spot = cleanDisplayName(photo && (photo.spot_label || photo.spotLabel), '');
+    const spot = cleanDisplayName(photo && photo.spot_label, '');
     return spot || 'General Photo Drop';
   }
 
   function photoCaption(photo) {
-    return String(photo && (photo.caption || photo.captionText || photo.caption_text || '') || '').trim();
+    return String(photo && photo.caption || '').trim();
   }
 
   function photoMember(photo) {
     if (!photo) return null;
-    if (photo.member_id || photo.memberId) {
-      const byId = appData.members.find(m => m.id === (photo.member_id || photo.memberId));
+    if (photo.member_id) {
+      const byId = appData.members.find(m => m.id === photo.member_id);
       if (byId) return byId;
     }
     return photo.user_id ? appData.members.find(m => m.user_id === photo.user_id) : null;
@@ -3397,13 +3393,13 @@
 
   function photoPosterName(photo) {
     const member = photoMember(photo);
-    return cleanDisplayName(member && member.name, cleanDisplayName(photo && (photo.displayName || photo.display_name || photo.author), 'A crew member'));
+    return cleanDisplayName(member && member.name, cleanDisplayName(photo && photo.display_name, 'A crew member'));
   }
 
   function photoVehicleInfo(photo) {
     const member = photoMember(photo);
     const profileVehicle = member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : '';
-    return cleanDisplayName(profileVehicle || (photo && (photo.carLabel || photo.car_label || photo.car)), '');
+    return cleanDisplayName(profileVehicle || (photo && photo.car_label), '');
   }
 
   function userCanDeletePhoto(photo) {
@@ -3430,7 +3426,7 @@
     }
 
     grid.innerHTML = photos.map(p => {
-      const imageUrl = p.imageUrl || p.image_url || p.url || '';
+      const imageUrl = p.image_url || '';
       const context = photoDropContext(p);
       const caption = photoCaption(p);
       const postedAt = activityDate(p, p.date);
@@ -3499,8 +3495,8 @@
       user_id: currentUserId(),
       member_id: member ? member.id : null,
       image_url: imageUrl,
-      caption,
-      spot_label: spotLabel,
+      caption: caption || null,
+      spot_label: spotLabel || null,
       display_name: currentActorName(),
       car_label: member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : ''
     };
