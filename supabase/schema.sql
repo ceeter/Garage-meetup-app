@@ -94,6 +94,11 @@ create table if not exists public.check_ins (
   note text,
   meet_id uuid references public.meets(id) on delete set null,
   group_id uuid references public.groups(id) on delete set null,
+  latitude double precision,
+  longitude double precision,
+  geocoded_address text,
+  geocode_provider text,
+  place_id text,
   created_at timestamp with time zone default now(),
   expires_at timestamp with time zone default now() + interval '4 hours',
   ended_at timestamp with time zone
@@ -152,6 +157,11 @@ alter table public.check_ins add column if not exists location_text text;
 alter table public.check_ins add column if not exists note text;
 alter table public.check_ins add column if not exists meet_id uuid references public.meets(id) on delete set null;
 alter table public.check_ins add column if not exists group_id uuid references public.groups(id) on delete set null;
+alter table public.check_ins add column if not exists latitude double precision;
+alter table public.check_ins add column if not exists longitude double precision;
+alter table public.check_ins add column if not exists geocoded_address text;
+alter table public.check_ins add column if not exists geocode_provider text;
+alter table public.check_ins add column if not exists place_id text;
 alter table public.check_ins add column if not exists created_at timestamp with time zone default now();
 alter table public.meet_rsvps add column if not exists display_name text;
 alter table public.photo_drops add column if not exists meet_id uuid references public.meets(id) on delete cascade;

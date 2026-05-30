@@ -903,6 +903,7 @@
     .checkin-status.show { display: block; }
     .checkin-status.error { color: var(--red); }
     .checkin-status.loading { color: var(--amber); }
+    .checkin-status.success { color: var(--green); }
     .ci-main { min-width: 0; flex: 1; }
     .ci-loc { font-size: 0.78rem; color: var(--accent); margin-top: 2px; }
     .ci-note { font-size: 0.74rem; color: var(--text-2); margin-top: 2px; }
@@ -1602,7 +1603,8 @@
         </div>
         <div class="cruise-desc">
           Share your current cruise spot with your crew for up to 4 hours.
-          Cruise Mode uses a manual check-in, not live GPS tracking.
+          Shared cruise spots are manually entered and expire after 4 hours.
+          Live GPS tracking is not enabled.
         </div>
         <div class="cruise-note">
           🔒 Cruise spots expire automatically after 4 hours. Your live GPS is not shared.
@@ -1621,6 +1623,14 @@
           <div class="form-grp">
             <label class="form-lbl" for="ci-location">Location / Spot Name *</label>
             <input type="text" class="form-inp" id="ci-location" placeholder="e.g. Harbor Garage Level 2">
+            <input type="hidden" id="ci-latitude">
+            <input type="hidden" id="ci-longitude">
+            <input type="hidden" id="ci-geocoded-address">
+            <input type="hidden" id="ci-geocode-provider">
+            <input type="hidden" id="ci-place-id">
+            <div style="margin-top:8px">
+              <button class="btn-sm-ghost" type="button" id="find-ci-map-btn">Find on map</button>
+            </div>
           </div>
           <div class="form-grp">
             <label class="form-lbl" for="ci-note">Note</label>
@@ -1645,7 +1655,7 @@
       <div class="map-wrap">
         <div id="meet-map" aria-label="Global meet locations map"></div>
         <div class="map-note" id="meet-map-note">
-          <span>Map shows meet locations. Live cruiser pins are not enabled yet.</span>
+          <span>Map shows meet locations and manually shared cruise spots with coordinates. Live GPS tracking is not enabled.</span>
           <button class="btn-sm-ghost map-recenter-btn" type="button" id="map-recenter-btn">Re-center on me</button>
         </div>
       </div>
@@ -1659,7 +1669,7 @@
         <div class="card-body" id="checkin-list"></div>
       </div>
       <!-- Auto-expiry concept note -->
-      <div class="ci-footnote">⏱ Cruise spots expire automatically after 4 hours. Your live GPS is not shared.</div>
+      <div class="ci-footnote">⏱ Shared cruise spots are manually entered and expire after 4 hours. Live GPS tracking is not enabled.</div>
 
     </section><!-- /map -->
 
@@ -3530,7 +3540,8 @@
     const { data, error } = await supabaseClient
       .from('check_ins')
       .select('*')
-      .or(`expires_at.gt.${nowIso},ended_at.not.is.null`)
+      .gt('expires_at', nowIso)
+      .is('ended_at', null)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -4595,7 +4606,16 @@
       return;
     }
 
-    const payload = buildCheckinPayload({ locationText: meet.location || meet.title, meetId });
+    const coords = validMapCoordinates(meet.latitude, meet.longitude);
+    const payload = buildCheckinPayload({
+      locationText: meet.location || meet.title,
+      meetId,
+      latitude: coords ? coords.latitude : null,
+      longitude: coords ? coords.longitude : null,
+      geocodedAddress: meet.geocoded_address || meet.geocodedAddress || null,
+      geocodeProvider: meet.geocode_provider || meet.geocodeProvider || null,
+      placeId: meet.place_id || meet.placeId || null
+    });
     try {
       const { error } = await supabaseClient.from('check_ins').insert([payload]);
       if (error) throw error;
@@ -4629,16 +4649,16 @@
   function myActiveCheckin() {
     const uid = currentUserId();
     const now = Date.now();
-    return uid ? appData.checkins.find(c => c.user_id === uid && new Date(c.expires_at).getTime() > now) : null;
+    return uid ? appData.checkins.find(c => c.user_id === uid && !c.ended_at && new Date(c.expires_at).getTime() > now) : null;
   }
 
   function globalActiveCheckins() {
     const now = Date.now();
-    return (appData.checkins || []).filter(c => new Date(c.expires_at).getTime() > now);
+    return (appData.checkins || []).filter(c => !c.ended_at && new Date(c.expires_at).getTime() > now);
   }
 
   function activeCheckins() {
-    return scopedCheckins().filter(c => new Date(c.expires_at).getTime() > Date.now());
+    return scopedCheckins().filter(c => !c.ended_at && new Date(c.expires_at).getTime() > Date.now());
   }
 
   function checkinExpiresText(expiresAt) {
@@ -4658,10 +4678,72 @@
   }
 
   function setCheckinSaving(isSaving) {
-    ['save-checkin-btn','cancel-checkin-btn','cruise-start','cruise-stop','update-cruise-spot','stop-cruise-panel','ci-location','ci-note','ci-meet'].forEach(id => {
+    ['save-checkin-btn','cancel-checkin-btn','cruise-start','cruise-stop','update-cruise-spot','stop-cruise-panel','find-ci-map-btn','ci-location','ci-note','ci-meet'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = isSaving;
     });
+  }
+
+  function setCheckinGeocodeFields(result = {}) {
+    const latitude = result.latitude === null || result.latitude === undefined ? '' : result.latitude;
+    const longitude = result.longitude === null || result.longitude === undefined ? '' : result.longitude;
+    document.getElementById('ci-latitude').value = latitude;
+    document.getElementById('ci-longitude').value = longitude;
+    document.getElementById('ci-geocoded-address').value = result.formattedAddress || result.geocoded_address || '';
+    document.getElementById('ci-geocode-provider').value = result.provider || result.geocode_provider || '';
+    document.getElementById('ci-place-id').value = result.placeId || result.place_id || '';
+  }
+
+  function clearCheckinGeocodeFields() {
+    setCheckinGeocodeFields({});
+  }
+
+  function handleCheckinLocationInput() {
+    clearCheckinGeocodeFields();
+    setCheckinStatus('', '');
+  }
+
+  function checkinCoordinatePayload() {
+    const latValue = document.getElementById('ci-latitude').value.trim();
+    const lngValue = document.getElementById('ci-longitude').value.trim();
+    const coords = latValue || lngValue ? validMapCoordinates(latValue, lngValue) : null;
+    return {
+      latitude: coords ? coords.latitude : null,
+      longitude: coords ? coords.longitude : null
+    };
+  }
+
+  async function findCheckinOnMap() {
+    const query = document.getElementById('ci-location').value.trim();
+    if (!query) {
+      setCheckinStatus('error', 'Location / spot name is required.');
+      return;
+    }
+    if (!isSupabaseReady() || !supabaseClient.functions) {
+      setCheckinStatus('error', 'Map lookup needs the Supabase geocoding function.');
+      return;
+    }
+
+    const button = document.getElementById('find-ci-map-btn');
+    if (button) button.disabled = true;
+    setCheckinStatus('loading', 'Finding map location…');
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('geocode-meet-location', { body: { query } });
+      const coords = data && validMapCoordinates(data.latitude, data.longitude);
+      if (error || !data || data.error || !coords) {
+        clearCheckinGeocodeFields();
+        setCheckinStatus('error', 'Could not find that spot. Try adding city/state or a more complete address.');
+        return;
+      }
+      setCheckinGeocodeFields({ ...data, latitude: coords.latitude, longitude: coords.longitude });
+      setCheckinStatus('success', 'Map location found');
+    } catch (err) {
+      console.error('Could not geocode cruise spot', err);
+      clearCheckinGeocodeFields();
+      setCheckinStatus('error', 'Could not find that spot. Try adding city/state or a more complete address.');
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function populateCheckinMeetOptions() {
@@ -4684,6 +4766,13 @@
     document.getElementById('ci-location').value = checkin && checkin.location_text ? checkin.location_text : '';
     document.getElementById('ci-note').value = checkin && checkin.note ? checkin.note : '';
     document.getElementById('ci-meet').value = checkin && checkin.meet_id ? checkin.meet_id : '';
+    setCheckinGeocodeFields({
+      latitude: checkin && checkin.latitude,
+      longitude: checkin && checkin.longitude,
+      geocoded_address: checkin && checkin.geocoded_address,
+      geocode_provider: checkin && checkin.geocode_provider,
+      place_id: checkin && checkin.place_id
+    });
     setCheckinStatus('', '');
     document.getElementById('checkin-form').classList.add('open');
     document.getElementById('ci-location').focus();
@@ -4694,6 +4783,7 @@
     document.getElementById('ci-location').value = '';
     document.getElementById('ci-note').value = '';
     document.getElementById('ci-meet').value = '';
+    clearCheckinGeocodeFields();
     const formTitle = document.getElementById('checkin-form-title');
     const saveBtn = document.getElementById('save-checkin-btn');
     if (formTitle) formTitle.textContent = 'Share Cruise Spot';
@@ -4718,8 +4808,11 @@
     const pinText = mappedCount
       ? `${mappedCount} global meet${mappedCount === 1 ? '' : 's'} mapped. Pins stay visible no matter which crew is selected.`
       : 'No mapped meets yet. Add coordinates to a meet to show it here.';
-    const cruiserPinNote = 'Map shows meet locations. Live cruiser pins are not enabled yet.';
-    return `${pinText} ${cruiserPinNote}${userMapLocationMessage ? ' ' + userMapLocationMessage : ''}`;
+    const cruisePins = activeCheckins().filter(c => validMapCoordinates(c.latitude, c.longitude)).length;
+    const cruisePinNote = cruisePins
+      ? `${cruisePins} manually shared cruise spot${cruisePins === 1 ? '' : 's'} mapped for the selected crew.`
+      : 'No mapped cruise spots for the selected crew.';
+    return `${pinText} ${cruisePinNote} Live GPS tracking is not enabled.${userMapLocationMessage ? ' ' + userMapLocationMessage : ''}`;
   }
 
   function setMapNote(message) {
@@ -4810,12 +4903,29 @@
     </div>`;
   }
 
+  function activeMappedCruiseSpots() {
+    return activeCheckins().filter(c => validMapCoordinates(c.latitude, c.longitude));
+  }
+
+  function cruiseSpotPopupHtml(checkin) {
+    const meetTitle = checkinMeetTitle(checkin.meet_id);
+    return `<div class="meet-popup cruise-spot-popup">
+      <div class="meet-popup-title">${memberProfileButton(checkin.user_id, checkin.display_name || 'CruiseCrew member')}</div>
+      ${checkin.car_label ? `<div class="meet-popup-meta">🚗 ${esc(checkin.car_label)}</div>` : ''}
+      <div class="meet-popup-meta">📍 ${esc(checkin.location_text || 'Cruise spot shared')}</div>
+      ${checkin.note ? `<div class="meet-popup-meta">${esc(checkin.note)}</div>` : ''}
+      ${meetTitle ? `<div class="meet-popup-meta">Meet: ${esc(meetTitle)}</div>` : ''}
+      <div class="meet-popup-counts"><span>⏱ ${esc(checkinExpiresText(checkin.expires_at))} remaining</span></div>
+    </div>`;
+  }
+
   function renderMeetMap() {
     const noteEl = document.getElementById('meet-map-note');
     const mapEl = document.getElementById('meet-map');
     if (!mapEl) return;
 
     const mappedMeets = globalMeets().filter(meetHasCoordinates).sort(mapMeetSort);
+    const mappedCruiseSpots = activeMappedCruiseSpots();
     if (!window.L) {
       renderMeetMapEmpty('Map library could not load. Meet locations are still listed below when coordinates are missing.');
       if (noteEl) noteEl.textContent = 'Map unavailable: Leaflet did not load.';
@@ -4841,6 +4951,20 @@
       const lng = meetLongitude(meet);
       const marker = L.marker([lat, lng]).addTo(meetMapMarkers);
       marker.bindPopup(meetPopupHtml(meet), { maxWidth: 260, autoPanPadding: [18, 18] });
+    });
+
+    mappedCruiseSpots.forEach(checkin => {
+      const coords = validMapCoordinates(checkin.latitude, checkin.longitude);
+      if (!coords) return;
+      const marker = L.circleMarker([coords.latitude, coords.longitude], {
+        radius: 8,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#22c55e',
+        fillOpacity: 0.9
+      }).addTo(meetMapMarkers);
+      marker.bindPopup(cruiseSpotPopupHtml(checkin), { maxWidth: 260, autoPanPadding: [18, 18] });
+      marker.bindTooltip(cleanDisplayName(checkin.display_name, 'Cruise spot'), { direction: 'top', offset: [0, -8] });
     });
 
     centerMeetMap(activeMapCenter(), 12);
@@ -4965,9 +5089,10 @@
     openCheckinForm();
   }
 
-  function buildCheckinPayload({ locationText, note = '', meetId = null }) {
+  function buildCheckinPayload({ locationText, note = '', meetId = null, latitude = null, longitude = null, geocodedAddress = null, geocodeProvider = null, placeId = null }) {
     const profile = myMemberProfile();
     const carLabel = profile ? [profile.year, profile.make, profile.model].filter(Boolean).join(' ') : '';
+    const coords = validMapCoordinates(latitude, longitude);
     return {
       user_id: currentUserId(),
       group_id: selectedGroupId() || null,
@@ -4976,6 +5101,11 @@
       location_text: locationText,
       note,
       meet_id: meetId,
+      latitude: coords ? coords.latitude : null,
+      longitude: coords ? coords.longitude : null,
+      geocoded_address: geocodedAddress || null,
+      geocode_provider: geocodeProvider || null,
+      place_id: placeId || null,
       expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
       ended_at: null
     };
@@ -4988,7 +5118,17 @@
     if (!locationText) { setCheckinStatus('error', 'Location / spot name is required.'); return; }
     if (!currentUserId()) { promptSignIn('Sign in to start Cruise Mode.'); return; }
 
-    const payload = buildCheckinPayload({ locationText, note, meetId });
+    const coords = checkinCoordinatePayload();
+    const payload = buildCheckinPayload({
+      locationText,
+      note,
+      meetId,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      geocodedAddress: document.getElementById('ci-geocoded-address').value.trim() || null,
+      geocodeProvider: document.getElementById('ci-geocode-provider').value.trim() || null,
+      placeId: document.getElementById('ci-place-id').value.trim() || null
+    });
     const existing = myActiveCheckin();
 
     try {
@@ -5048,6 +5188,8 @@
   document.getElementById('cruise-start').addEventListener('click', startCheckin);
   document.getElementById('cruise-stop').addEventListener('click', stopSharing);
   document.getElementById('map-recenter-btn').addEventListener('click', () => requestMapLocation(true));
+  document.getElementById('find-ci-map-btn').addEventListener('click', findCheckinOnMap);
+  document.getElementById('ci-location').addEventListener('input', handleCheckinLocationInput);
   document.getElementById('save-checkin-btn').addEventListener('click', saveCheckin);
   document.getElementById('cancel-checkin-btn').addEventListener('click', closeCheckinForm);
 
