@@ -622,6 +622,54 @@
     }
 
     /* ============================================================
+       INSTALL PROMPT
+       ============================================================ */
+    .install-prompt {
+      display: none;
+      gap: 14px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      padding: 15px;
+      background: linear-gradient(135deg, rgba(232,68,26,0.16), rgba(17,17,22,0.96));
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r);
+      box-shadow: 0 12px 34px rgba(0,0,0,0.32);
+    }
+    .install-prompt.show { display: flex; }
+    .install-copy { min-width: 0; }
+    .install-title {
+      font-family: var(--f-display);
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .install-body { color: var(--text-2); font-size: 0.86rem; line-height: 1.45; margin-top: 4px; }
+    .install-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: 0 0 auto; }
+    .install-modal-list { margin: 8px 0 0 20px; color: var(--text-2); font-size: 0.88rem; line-height: 1.6; }
+    .install-modal-section + .install-modal-section { margin-top: 14px; }
+    .install-note {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r-sm);
+      background: var(--accent-lo);
+      color: var(--text);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+    .install-menu-btn { display: none; width: 100%; margin-top: 10px; }
+    .install-menu-btn.show { display: block; }
+    @media (max-width: 640px) {
+      .install-prompt { display: none; flex-direction: column; }
+      .install-prompt.show { display: flex; }
+      .install-actions { width: 100%; }
+      .install-actions button { flex: 1 1 135px; }
+    }
+
+    /* ============================================================
        HOME DASHBOARD
        ============================================================ */
     .hero {
@@ -1542,6 +1590,36 @@
       </div>
     </div>
 
+
+    <div class="crew-modal" id="install-guide-modal" aria-label="Install CruiseCrew guide" role="dialog" aria-modal="true">
+      <div class="crew-modal-card">
+        <div class="crew-modal-head">
+          <div>
+            <div class="crew-modal-title">Install CruiseCrew</div>
+            <div class="crew-modal-sub">Add CruiseCrew to your phone Home Screen for the best app-like experience.</div>
+          </div>
+          <button class="auth-close" id="install-guide-close" type="button" aria-label="Close install guide">×</button>
+        </div>
+        <div class="install-modal-section">
+          <div class="form-lbl">On iPhone:</div>
+          <ol class="install-modal-list">
+            <li>Tap the Share button in Safari.</li>
+            <li>Tap Add to Home Screen.</li>
+            <li>Tap Add.</li>
+          </ol>
+        </div>
+        <div class="install-modal-section">
+          <div class="form-lbl">On Android:</div>
+          <ol class="install-modal-list">
+            <li>Tap the ⋮ menu in Chrome.</li>
+            <li>Tap Install app or Add to Home screen.</li>
+            <li>Tap Install.</li>
+          </ol>
+        </div>
+        <div class="install-note">For iPhone notifications, CruiseCrew must be added to your Home Screen first.</div>
+      </div>
+    </div>
+
     <div class="auth-panel" id="auth-panel" aria-label="Account sign in" role="dialog" aria-modal="true">
       <div class="auth-card">
         <div class="auth-top">
@@ -1574,6 +1652,8 @@
           <button class="auth-helper-btn" id="auth-signup-btn" type="button">New here? <strong>Create an account</strong></button>
           <button class="btn-cancel" id="auth-signout-btn">Sign Out</button>
         </div>
+
+        <button class="btn-cancel install-menu-btn" id="install-menu-btn" type="button">Add to Home Screen</button>
         <div class="auth-status" id="auth-status" role="status" aria-live="polite"></div>
         <div class="auth-note">Public garage and event details stay readable when signed out.</div>
       </div>
@@ -1583,6 +1663,17 @@
          HOME TAB
          ====================================================== -->
     <section class="tab-section active" id="tab-home">
+
+      <div class="install-prompt" id="install-prompt" role="region" aria-label="Install CruiseCrew" aria-live="polite">
+        <div class="install-copy">
+          <div class="install-title">Install CruiseCrew</div>
+          <div class="install-body">Add CruiseCrew to your Home Screen for the best app experience, faster access, and notifications.</div>
+        </div>
+        <div class="install-actions">
+          <button class="btn-primary" id="install-how-btn" type="button">How to Install</button>
+          <button class="btn-cancel" id="install-later-btn" type="button">Maybe Later</button>
+        </div>
+      </div>
 
       <!-- Hero banner -->
       <div class="hero">
@@ -2109,6 +2200,78 @@
   let serviceWorkerRegistration = null;
   let expectingControllerReload = false;
   let refreshingForControllerChange = false;
+
+
+  const INSTALL_PROMPT_DISMISSED_AT_KEY = 'cruisecrew_install_prompt_dismissed_at';
+  const INSTALL_PROMPT_DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
+
+  function isAppInstalledStandalone() {
+    const iosStandalone = !!(window.navigator && window.navigator.standalone);
+    const displayStandalone = !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    return iosStandalone || displayStandalone;
+  }
+
+  function getInstallPromptDismissedAt() {
+    const value = Number(localStorage.getItem(INSTALL_PROMPT_DISMISSED_AT_KEY) || 0);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function shouldShowInstallPrompt() {
+    const installed = isAppInstalledStandalone();
+    console.log('Install prompt eligibility checked', { installed });
+    if (installed) {
+      console.log('App is already installed/standalone');
+      return false;
+    }
+    const dismissedAt = getInstallPromptDismissedAt();
+    return !dismissedAt || Date.now() - dismissedAt >= INSTALL_PROMPT_DISMISS_MS;
+  }
+
+  function updateInstallUi() {
+    const showPrompt = shouldShowInstallPrompt();
+    const installed = isAppInstalledStandalone();
+    const prompt = document.getElementById('install-prompt');
+    const menuBtn = document.getElementById('install-menu-btn');
+    if (prompt) prompt.classList.toggle('show', showPrompt);
+    if (prompt && prompt.classList.contains('show')) console.log('Install prompt shown');
+    if (menuBtn) menuBtn.classList.toggle('show', !installed);
+  }
+
+  function openInstallGuide() {
+    console.log('Install guide opened');
+    const modal = document.getElementById('install-guide-modal');
+    if (modal) modal.classList.add('open');
+  }
+
+  function closeInstallGuide() {
+    const modal = document.getElementById('install-guide-modal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  function dismissInstallPrompt() {
+    localStorage.setItem(INSTALL_PROMPT_DISMISSED_AT_KEY, String(Date.now()));
+    console.log('Install prompt dismissed');
+    const prompt = document.getElementById('install-prompt');
+    if (prompt) prompt.classList.remove('show');
+  }
+
+  function wireInstallPrompt() {
+    document.getElementById('install-how-btn').addEventListener('click', openInstallGuide);
+    document.getElementById('install-later-btn').addEventListener('click', dismissInstallPrompt);
+    document.getElementById('install-menu-btn').addEventListener('click', () => {
+      closeAuthPanel();
+      openInstallGuide();
+    });
+    document.getElementById('install-guide-close').addEventListener('click', closeInstallGuide);
+    document.getElementById('install-guide-modal').addEventListener('click', event => {
+      if (event.target.id === 'install-guide-modal') closeInstallGuide();
+    });
+    document.addEventListener('keydown', event => {
+      const modal = document.getElementById('install-guide-modal');
+      if (event.key === 'Escape' && modal && modal.classList.contains('open')) closeInstallGuide();
+    });
+    updateInstallUi();
+  }
 
   // Helper: date string N days from today
   function futureDate(n) {
@@ -6990,6 +7153,7 @@ ${JSON.stringify({
     initAppVersionChecks();
     registerServiceWorker();
     wireAuth();
+    wireInstallPrompt();
     setAuthStatus('loading', 'Checking signed-in user...');
     try {
       await loadCurrentSession();
