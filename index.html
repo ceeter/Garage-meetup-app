@@ -1847,6 +1847,7 @@
             <input type="text" class="form-inp" id="ann-author" placeholder="e.g. Admin">
           </div>
         </div>
+        <div class="form-status" id="ann-status" role="status" aria-live="polite"></div>
         <div class="form-actions">
           <button class="btn-primary" id="save-ann-btn">Post It</button>
           <button class="btn-cancel"  id="cancel-ann-btn">Cancel</button>
@@ -2225,7 +2226,18 @@
         date: p.created_at || null
       })
     },
-    announcements: { table: 'announcements', order: 'created_at' }
+    announcements: {
+      table: 'announcements', order: 'created_at',
+      // News is intentionally global across all CruiseCrew, so do not include
+      // selected crew/group fields in the insert payload.
+      toDb: a => ({
+        title: a.title,
+        text: a.text,
+        type: a.type || 'info',
+        author: a.author || 'Admin',
+        date: a.date || new Date().toISOString().split('T')[0]
+      })
+    }
   };
 
   const appData = {
@@ -3701,6 +3713,8 @@
 
     const cfg = DB[kind];
     const ascending = kind === 'meets';
+    // News is intentionally global across all CruiseCrew. Never scope the
+    // announcements fetch by selected crew, group_id, crew_id, or active group.
     const { data, error } = await supabaseClient
       .from(cfg.table)
       .select(cfg.select || '*')
@@ -6138,33 +6152,62 @@ ${JSON.stringify({
       </div>`).join('');
   }
 
+  function setAnnStatus(type, msg) {
+    const el = document.getElementById('ann-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = `form-status${msg ? ' show' : ''}${type ? ' ' + type : ''}`;
+  }
+
+  function friendlyAnnouncementError(err) {
+    const message = String(err && err.message || '').trim();
+    if (/sign in|auth|jwt|session/i.test(message)) return 'Please sign in before posting crew news.';
+    if (/row-level security|violates row-level security|permission denied|not allowed|policy/i.test(message)) {
+      return 'You are signed in, but this account is not allowed to post crew news. Ask an owner to update the Supabase announcements RLS policy.';
+    }
+    return message || 'Could not save announcement. Please try again.';
+  }
+
   // Toggle add-announcement form
   document.getElementById('toggle-add-ann').addEventListener('click', () => {
-    if (!currentUserId()) {
+    if (!(currentSessionUserId() || currentUserId())) {
+      setAnnStatus('error', 'Please sign in before posting crew news.');
       promptSignIn('Sign in as an admin to post news.');
       return;
     }
-    if (!requireAdminUser('Admin only: only owners can post crew news.')) return;
+    if (!requireAdminUser('Admin only: only owners can post crew news.')) {
+      setAnnStatus('error', 'You are signed in, but this account is not allowed to post crew news.');
+      return;
+    }
+    setAnnStatus('', '');
     document.getElementById('add-ann-form').classList.toggle('open');
   });
   document.getElementById('cancel-ann-btn').addEventListener('click', () => {
     document.getElementById('add-ann-form').classList.remove('open');
+    setAnnStatus('', '');
     clearAnnForm();
   });
 
   // Save announcement
   document.getElementById('save-ann-btn').addEventListener('click', async () => {
-    if (!currentUserId()) {
+    const authUserId = currentSessionUserId() || currentUserId();
+    if (!authUserId) {
+      setAnnStatus('error', 'Please sign in before posting crew news.');
       promptSignIn('Sign in as an admin to post news.');
       return;
     }
-    if (!requireAdminUser('Admin only: only owners can post crew news.')) return;
+    if (!requireAdminUser('Admin only: only owners can post crew news.')) {
+      setAnnStatus('error', 'You are signed in, but this account is not allowed to post crew news.');
+      return;
+    }
     const title = document.getElementById('ann-title').value.trim();
     const text  = document.getElementById('ann-text').value.trim();
-    if (!title || !text) { toast('Title and message are required'); return; }
+    if (!title || !text) { setAnnStatus('error', 'Title and message are required.'); toast('Title and message are required'); return; }
 
+    // News is intentionally global across all CruiseCrew. This insert only
+    // sends columns required by the announcements schema and never includes
+    // selected crew/group identifiers.
     const ann = {
-      id:     genId(),
       title,
       text,
       type:   document.getElementById('ann-type').value,
@@ -6173,15 +6216,19 @@ ${JSON.stringify({
     };
 
     try {
+      setAnnStatus('loading', 'Posting crew news...');
       await addRecord('announcements', ann);
       await loadKind('announcements');
       clearAnnForm();
       document.getElementById('add-ann-form').classList.remove('open');
       renderAnnouncements();
       renderHome();
+      setAnnStatus('success', 'Crew news posted.');
       toast('Announcement posted 📢');
     } catch (err) {
-      toast(`Could not save announcement: ${err.message}`);
+      const friendly = friendlyAnnouncementError(err);
+      setAnnStatus('error', friendly);
+      toast(`Could not save announcement: ${friendly}`);
     }
   });
 
