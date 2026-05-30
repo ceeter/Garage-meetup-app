@@ -58,6 +58,9 @@ create table if not exists public.meets (
   date date not null,
   time time,
   location text not null,
+  latitude double precision,
+  longitude double precision,
+  location_label text,
   description text default '',
   rsvp jsonb not null default '{"going":0,"maybe":0,"cantgo":0}'::jsonb,
   my_rsvp text,
@@ -135,6 +138,9 @@ alter table public.members add column if not exists user_id uuid unique referenc
 alter table public.members add column if not exists updated_at timestamptz not null default now();
 alter table public.meets add column if not exists created_by uuid references auth.users(id) on delete set null;
 alter table public.meets add column if not exists group_id uuid references public.groups(id) on delete set null;
+alter table public.meets add column if not exists latitude double precision;
+alter table public.meets add column if not exists longitude double precision;
+alter table public.meets add column if not exists location_label text;
 alter table public.check_ins add column if not exists user_id uuid references auth.users(id) on delete cascade;
 alter table public.check_ins add column if not exists display_name text;
 alter table public.check_ins add column if not exists car_label text;

@@ -16,6 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
   <style>
     /* ============================================================
@@ -909,42 +910,42 @@
     .btn-stop:hover  { background: rgba(239,68,68,0.1); }
     .btn-stop.dimmed { opacity: 0.4; }
 
-    /* Map placeholder */
-    .map-wrap { border-radius: var(--r); overflow: hidden; margin-bottom: 16px; }
-    /* FUTURE: Replace .map-grid with a real Mapbox/Google Maps embed */
-    .map-grid {
-      height: 260px;
-      background:
-        repeating-linear-gradient(0deg,   rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 38px),
-        repeating-linear-gradient(90deg,  rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 38px),
-        linear-gradient(180deg, #09090F 0%, #07070D 100%);
-      border: 1px solid var(--border);
-      border-bottom: none;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 10px; position: relative;
-    }
-    .map-grid::before {
-      content: '';
-      position: absolute; top: 50%; left: 50%;
-      transform: translate(-50%,-50%);
-      width: 140px; height: 140px;
-      background: radial-gradient(circle, rgba(232,68,26,0.08) 0%, transparent 70%);
-    }
-    .map-pin {
-      width: 34px; height: 34px; border-radius: 50% 50% 50% 0;
-      background: var(--accent); transform: rotate(-45deg);
-      box-shadow: 0 0 22px var(--accent-glow); position: relative; z-index: 1;
-    }
-    .map-lbl {
-      font-family: var(--f-display); font-size: 0.82rem; font-weight: 600;
-      color: var(--text-3); text-transform: uppercase; letter-spacing: 0.07em;
-      text-align: center; z-index: 1;
-    }
-    .map-sub { font-size: 0.72rem; color: var(--text-3); z-index: 1; text-align: center; }
+    /* Meet map */
+    .map-wrap { border-radius: var(--r); overflow: hidden; margin-bottom: 16px; border: 1px solid var(--border); background: var(--bg-card); }
+    #meet-map { height: 320px; width: 100%; min-width: 0; background: #09090F; }
     .map-note {
-      background: var(--bg-card); border: 1px solid var(--border);
-      border-top: none; padding: 12px 14px;
+      background: var(--bg-card); border-top: 1px solid var(--border); padding: 12px 14px;
       font-size: 0.76rem; color: var(--text-3); line-height: 1.5;
+    }
+    .map-empty {
+      min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 8px; padding: 22px; text-align: center; color: var(--text-3);
+      background:
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 38px),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.018) 0, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 38px),
+        linear-gradient(180deg, #09090F 0%, #07070D 100%);
+    }
+    .map-empty-icon { font-size: 2rem; }
+    .map-empty-title { font-family: var(--f-display); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text); font-weight: 700; }
+    .leaflet-container { font-family: var(--f-body); background: #09090F; }
+    .leaflet-control-attribution { font-size: 10px; }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); box-shadow: 0 12px 30px rgba(0,0,0,0.45); }
+    .leaflet-popup-content { margin: 12px; min-width: 190px; max-width: min(240px, 72vw); }
+    .meet-popup-title { font-family: var(--f-display); font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .meet-popup-meta { color: var(--text-3); font-size: 0.78rem; line-height: 1.45; margin-bottom: 8px; }
+    .meet-popup-counts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; color: var(--text-2); font-size: 0.74rem; }
+    .meet-popup-btn {
+      border: 0; border-radius: 999px; padding: 8px 10px; width: 100%; cursor: pointer;
+      background: var(--accent); color: #fff; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .no-location-list { display: grid; gap: 10px; margin-bottom: 16px; }
+    .no-location-item { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; background: var(--bg-card); }
+    .no-location-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .no-location-meta { color: var(--text-3); font-size: 0.78rem; line-height: 1.45; }
+    .no-location-action { margin-top: 10px; }
+    @media (max-width: 420px) {
+      #meet-map { height: 300px; }
+      .leaflet-top, .leaflet-bottom { z-index: 450; }
     }
 
     /* Check-in list */
@@ -1068,7 +1069,7 @@
       background: linear-gradient(135deg, #181820 0%, #0E0E14 100%);
     }
     .photo-preview.show { display: block; }
-    .photo-help, .photo-status, .photo-debug {
+    .form-help, .photo-help, .photo-status, .photo-debug {
       font-size: 0.74rem;
       color: var(--text-3);
       line-height: 1.45;
@@ -1524,8 +1525,21 @@
             </div>
           </div>
           <div class="form-grp">
-            <label class="form-lbl">Location *</label>
+            <label class="form-lbl">Location / Spot *</label>
             <input type="text" class="form-inp" id="meet-loc" placeholder="e.g. Harbor Parking Garage, Level 2">
+          </div>
+          <div class="form-2col">
+            <div class="form-grp">
+              <label class="form-lbl">Latitude <span style="color:var(--text-3);font-weight:500">(optional)</span></label>
+              <input type="number" step="any" inputmode="decimal" class="form-inp" id="meet-lat" placeholder="e.g. 34.0522">
+            </div>
+            <div class="form-grp">
+              <label class="form-lbl">Longitude <span style="color:var(--text-3);font-weight:500">(optional)</span></label>
+              <input type="number" step="any" inputmode="decimal" class="form-inp" id="meet-lng" placeholder="e.g. -118.2437">
+            </div>
+          </div>
+          <div class="form-grp">
+            <div class="form-help">Optional for MVP maps: add coordinates to show this meet as a pin. Leave blank if you only know the spot name.</div>
           </div>
           <div class="form-grp">
             <label class="form-lbl">Description</label>
@@ -1546,14 +1560,14 @@
 
     <!-- ======================================================
          MAP / CHECK-IN TAB
-         FUTURE: Replace map-grid with a real Mapbox embed.
-                 Wire Cruise Mode buttons to navigator.geolocation
-                 + Supabase Realtime for live pin updates.
+         MVP: Leaflet map shows global meets with saved coordinates.
+         Future: wire Cruise Mode buttons to navigator.geolocation
+                 + Supabase Realtime for live user pins.
          ====================================================== -->
     <section class="tab-section" id="tab-map">
 
       <div class="sec-hdr">
-        <div class="sec-title">Check<em>-In</em></div>
+        <div class="sec-title">Maps <em>&amp; Check-In</em></div>
       </div>
 
       <!-- Cruise Mode card -->
@@ -1601,21 +1615,14 @@
         </div>
       </div>
 
-      <!-- Map placeholder -->
-      <!-- FUTURE: remove map-wrap entirely and replace with:
-           <div id="map" style="height:260px;border-radius:12px"></div>
-           Then init Mapbox GL JS or Google Maps API here -->
-      <div class="map-wrap">
-        <div class="map-grid">
-          <div class="map-pin"></div>
-          <div class="map-lbl">Live check-ins will<br>appear here later</div>
-          <div class="map-sub">Map integration coming soon</div>
-        </div>
-        <div class="map-note">
-          ⚙️ <strong>Future:</strong> Mapbox GL JS or Google Maps will load here.
-          Member pins will update in real-time via Supabase Realtime channels.
-        </div>
+      <div class="sec-hdr" style="margin-top:4px">
+        <div class="sec-title">Meet <em>Map</em></div>
       </div>
+      <div class="map-wrap">
+        <div id="meet-map" aria-label="Global meet locations map"></div>
+        <div class="map-note" id="meet-map-note">Global meet pins appear here when a meet has latitude and longitude.</div>
+      </div>
+      <div id="map-no-location"></div>
 
       <!-- Checked-in members -->
       <div class="sec-hdr" style="margin-top:4px">
@@ -1778,12 +1785,12 @@
         Meets
       </button>
 
-      <button class="nav-item" data-tab="map" aria-label="Check-In">
+      <button class="nav-item" data-tab="map" aria-label="Maps">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
           <circle cx="12" cy="9" r="2.5"/>
         </svg>
-        Check-In
+        Maps
       </button>
 
       <button class="nav-item" data-tab="photos" aria-label="Photos">
@@ -1811,6 +1818,7 @@
        JAVASCRIPT
        ============================================================ -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
   /*
   ================================================================
@@ -1977,15 +1985,21 @@
     },
     meets: {
       table: 'meets', order: 'date',
-      toDb: m => ({
-        id: m.id, group_id: m.group_id || null, title: m.title, date: m.date, time: m.time || null,
-        location: m.location, description: m.desc || '',
-        rsvp: m.rsvp || emptyRsvpCounts(),
-        my_rsvp: m.myRsvp || null,
-        created_by: m.created_by || m.createdBy || currentSessionUserId() || currentUserId() || null,
-        checked_in: !!m.checkedIn
-      }),
-      fromDb: m => ({ ...m, desc: m.description || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
+      toDb: m => {
+        const row = {
+          id: m.id, group_id: m.group_id || null, title: m.title, date: m.date, time: m.time || null,
+          location: m.location, description: m.desc || '',
+          rsvp: m.rsvp || emptyRsvpCounts(),
+          my_rsvp: m.myRsvp || null,
+          created_by: m.created_by || m.createdBy || currentSessionUserId() || currentUserId() || null,
+          checked_in: !!m.checkedIn
+        };
+        if (Object.prototype.hasOwnProperty.call(m, 'latitude')) row.latitude = m.latitude === null || m.latitude === '' ? null : Number(m.latitude);
+        if (Object.prototype.hasOwnProperty.call(m, 'longitude')) row.longitude = m.longitude === null || m.longitude === '' ? null : Number(m.longitude);
+        if (m.location_label !== undefined || m.locationLabel !== undefined) row.location_label = m.location_label || m.locationLabel || m.location || null;
+        return row;
+      },
+      fromDb: m => ({ ...m, desc: m.description || '', locationLabel: m.location_label || m.location || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
     },
     photos: {
       table: 'photo_drops',
@@ -2029,6 +2043,9 @@
     activeInvite: null,
     crewSettingsBusy: false
   };
+
+  let meetMap = null;
+  let meetMapMarkers = null;
 
 
   function selectedGroupId() {
@@ -2135,6 +2152,42 @@
     return gid ? (appData.checkins || []).filter(c => c.group_id === gid || (c.meet_id && scopedMeets().some(m => m.id === c.meet_id))) : (appData.checkins || []);
   }
 
+
+
+  function meetLatitude(meet) {
+    const value = Number(meet && meet.latitude);
+    return Number.isFinite(value) && value >= -90 && value <= 90 ? value : null;
+  }
+
+  function meetLongitude(meet) {
+    const value = Number(meet && meet.longitude);
+    return Number.isFinite(value) && value >= -180 && value <= 180 ? value : null;
+  }
+
+  function meetHasCoordinates(meet) {
+    return meetLatitude(meet) !== null && meetLongitude(meet) !== null;
+  }
+
+  function meetLocationLabel(meet) {
+    return cleanDisplayName(meet && (meet.location_label || meet.locationLabel), meet && meet.location || 'No location label');
+  }
+
+  function upcomingMeetTime(meet) {
+    const date = meet && meet.date ? meet.date : '';
+    const time = meet && meet.time ? meet.time : '12:00';
+    const value = new Date(`${date}T${time}`).getTime();
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function mapMeetSort(a, b) {
+    const now = Date.now();
+    const at = upcomingMeetTime(a);
+    const bt = upcomingMeetTime(b);
+    const aUpcoming = at >= now;
+    const bUpcoming = bt >= now;
+    if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+    return at - bt;
+  }
 
   function emptyRsvpCounts() {
     return { going: 0, maybe: 0, not_going: 0 };
@@ -4223,6 +4276,18 @@
     clearMeetForm();
   });
 
+
+  function optionalCoordinateInput(id, min, max, label) {
+    const raw = document.getElementById(id).value.trim();
+    if (!raw) return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      toast(`${label} must be between ${min} and ${max}.`);
+      throw new Error(`Invalid ${label.toLowerCase()}`);
+    }
+    return value;
+  }
+
   // Save (create or update) meet
   document.getElementById('save-meet-btn').addEventListener('click', async () => {
     const session = await getActiveMeetSession('Please sign in to save a meet.');
@@ -4234,6 +4299,19 @@
     const loc   = document.getElementById('meet-loc').value.trim();
     if (!title || !date || !loc) { toast('Name, Date & Location are required'); return; }
 
+    let latitude = null;
+    let longitude = null;
+    try {
+      latitude = optionalCoordinateInput('meet-lat', -90, 90, 'Latitude');
+      longitude = optionalCoordinateInput('meet-lng', -180, 180, 'Longitude');
+    } catch (err) {
+      return;
+    }
+    if ((latitude === null) !== (longitude === null)) {
+      toast('Add both latitude and longitude, or leave both blank.');
+      return;
+    }
+
     const meets = appData.meets;
     const editId = document.getElementById('edit-meet-id').value;
 
@@ -4241,6 +4319,9 @@
       id: editId || genId(), title, date,
       time:     document.getElementById('meet-time').value,
       location: loc,
+      locationLabel: loc,
+      latitude,
+      longitude,
       desc:     document.getElementById('meet-desc').value.trim(),
       rsvp:     emptyRsvpCounts(),
       myRsvp:   null,
@@ -4266,6 +4347,7 @@
       clearMeetForm();
       renderMeets();
       renderHome();
+      if (activeTabName() === 'map') renderMapSection();
     } catch (err) {
       console.error('Supabase meet save failed', err);
       toast(`Could not save meet: ${err.message}`);
@@ -4273,7 +4355,7 @@
   });
 
   function clearMeetForm() {
-    ['meet-name','meet-date','meet-time','meet-loc','meet-desc'].forEach(id => {
+    ['meet-name','meet-date','meet-time','meet-loc','meet-lat','meet-lng','meet-desc'].forEach(id => {
       document.getElementById(id).value = '';
     });
     document.getElementById('edit-meet-id').value = '';
@@ -4296,6 +4378,8 @@
     document.getElementById('meet-date').value  = m.date || '';
     document.getElementById('meet-time').value  = m.time || '';
     document.getElementById('meet-loc').value   = m.location || '';
+    document.getElementById('meet-lat').value   = meetLatitude(m) === null ? '' : meetLatitude(m);
+    document.getElementById('meet-lng').value   = meetLongitude(m) === null ? '' : meetLongitude(m);
     document.getElementById('meet-desc').value  = m.desc || '';
     const form = document.getElementById('add-meet-form');
     form.classList.add('open');
@@ -4491,7 +4575,113 @@
     setCheckinStatus('', '');
   }
 
+  function renderMeetMapEmpty(message) {
+    const mapEl = document.getElementById('meet-map');
+    if (!mapEl) return;
+    if (meetMap) {
+      meetMap.remove();
+      meetMap = null;
+      meetMapMarkers = null;
+    }
+    mapEl.innerHTML = `<div class="map-empty"><div class="map-empty-icon">🗺️</div><div class="map-empty-title">No mapped meets yet</div><div>${esc(message)}</div></div>`;
+  }
+
+  function meetPopupHtml(meet) {
+    const counts = normalizeRsvpCounts(meet.rsvp);
+    return `<div class="meet-popup">
+      <div class="meet-popup-title">${esc(meet.title)}</div>
+      <div class="meet-popup-meta">📅 ${esc(fmtDate(meet.date))}${meet.time ? ` · ${esc(fmtTime(meet.time))}` : ''}<br>📍 ${esc(meetLocationLabel(meet))}</div>
+      <div class="meet-popup-counts"><span>${counts.going} Going</span><span>${counts.maybe} Maybe</span><span>${counts.not_going} Can't go</span></div>
+      <button class="meet-popup-btn" type="button" onclick="viewMeetFromMap('${meet.id}')">View meet</button>
+    </div>`;
+  }
+
+  function renderMeetMap() {
+    const noteEl = document.getElementById('meet-map-note');
+    const mapEl = document.getElementById('meet-map');
+    if (!mapEl) return;
+
+    const mappedMeets = globalMeets().filter(meetHasCoordinates).sort(mapMeetSort);
+    if (!window.L) {
+      renderMeetMapEmpty('Map library could not load. Meet locations are still listed below when coordinates are missing.');
+      if (noteEl) noteEl.textContent = 'Map unavailable: Leaflet did not load.';
+      return;
+    }
+    if (!mappedMeets.length) {
+      renderMeetMapEmpty('No mapped meets yet. Add coordinates to a meet to show it here.');
+      if (noteEl) noteEl.textContent = 'No mapped meets yet. Add coordinates to a meet to show it here.';
+      return;
+    }
+
+    if (!meetMap) {
+      mapEl.innerHTML = '';
+      meetMap = L.map(mapEl, { zoomControl: true, attributionControl: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(meetMap);
+      meetMapMarkers = L.layerGroup().addTo(meetMap);
+    } else {
+      meetMapMarkers.clearLayers();
+    }
+
+    const bounds = [];
+    mappedMeets.forEach(meet => {
+      const lat = meetLatitude(meet);
+      const lng = meetLongitude(meet);
+      const marker = L.marker([lat, lng]).addTo(meetMapMarkers);
+      marker.bindPopup(meetPopupHtml(meet), { maxWidth: 260, autoPanPadding: [18, 18] });
+      bounds.push([lat, lng]);
+    });
+
+    const first = mappedMeets[0];
+    meetMap.setView([meetLatitude(first), meetLongitude(first)], bounds.length === 1 ? 12 : 10);
+    if (bounds.length > 1) meetMap.fitBounds(bounds, { padding: [28, 28], maxZoom: 13 });
+    setTimeout(() => meetMap && meetMap.invalidateSize(), 80);
+    if (noteEl) noteEl.textContent = `${mappedMeets.length} global meet${mappedMeets.length === 1 ? '' : 's'} mapped. Pins stay visible no matter which crew is selected.`;
+  }
+
+  function renderMeetsWithoutLocations() {
+    const el = document.getElementById('map-no-location');
+    if (!el) return;
+    const missing = globalMeets().filter(m => !meetHasCoordinates(m)).sort(mapMeetSort);
+    if (!missing.length) {
+      el.innerHTML = '';
+      return;
+    }
+    const canManageMeet = currentUserIsAdmin();
+    el.innerHTML = `
+      <div class="sec-hdr" style="margin-top:4px"><div class="sec-title">No Map <em>Location Yet</em></div></div>
+      <div class="no-location-list">
+        ${missing.map(m => `<div class="no-location-item">
+          <div class="no-location-title">${esc(m.title)}</div>
+          <div class="no-location-meta">📅 ${esc(fmtDate(m.date))}${m.time ? ` · ${esc(fmtTime(m.time))}` : ''}<br>📍 ${esc(m.location || 'Location label missing')}</div>
+          <div class="no-location-action">${canManageMeet ? `<button class="btn-sm-ghost" type="button" onclick="editMeetFromMap('${m.id}')">Add map location</button>` : `<button class="btn-sm-ghost" type="button" onclick="viewMeetFromMap('${m.id}')">View meet</button>`}</div>
+        </div>`).join('')}
+      </div>`;
+  }
+
+  function renderMapSection() {
+    renderMeetMap();
+    renderMeetsWithoutLocations();
+  }
+
+  function viewMeetFromMap(id) {
+    appData.expandedMeetRosters.add(id);
+    switchTab('meets');
+    setTimeout(() => {
+      const card = document.getElementById(`mc-${id}`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  }
+
+  function editMeetFromMap(id) {
+    switchTab('meets');
+    setTimeout(() => editMeet(id), 80);
+  }
+
   function renderCheckins() {
+    renderMapSection();
     const checkins = activeCheckins();
     const el = document.getElementById('checkin-list');
     const mine = myActiveCheckin();
