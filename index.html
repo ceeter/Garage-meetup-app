@@ -5300,8 +5300,7 @@
     try {
       setCheckinSaving(true);
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      const stoppedAt = new Date().toISOString();
-      const { error } = await supabaseClient.from('check_ins').update({ expires_at: stoppedAt, ended_at: stoppedAt, display_name: currentActorName() }).eq('id', mine.id).eq('user_id', currentUserId());
+      const { error } = await supabaseClient.rpc('stop_my_check_in');
       if (error) throw error;
       await refreshCheckins(false);
       renderMeets();
