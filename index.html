@@ -57,6 +57,7 @@
 
       /* Layout */
       --nav-h:     64px;
+      --keyboard-inset: 0px;
       --safe-top:  env(safe-area-inset-top, 0px);
       --safe-bot:  env(safe-area-inset-bottom, 0px);
       --r:         12px;
@@ -67,7 +68,7 @@
        RESET & BASE
        ============================================================ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html  { font-size: 16px; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+    html  { font-size: 16px; -webkit-tap-highlight-color: transparent; overflow-x: hidden; scroll-padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 96px); }
     body  {
       background: var(--bg);
       color: var(--text);
@@ -83,7 +84,7 @@
     }
     body, button, input, textarea, select { min-width: 0; }
     button  { cursor: pointer; border: none; background: none; font-family: var(--f-body); touch-action: manipulation; }
-    input, textarea, select { font-family: var(--f-body); max-width: 100%; }
+    input, textarea, select { font-family: var(--f-body); max-width: 100%; scroll-margin-top: calc(64px + var(--safe-top)); scroll-margin-bottom: calc(var(--nav-h) + var(--safe-bot) + 96px); }
     img    { max-width: 100%; display: block; }
     p, div, h1, h2, h3, span, strong, em, button { overflow-wrap: anywhere; }
 
@@ -143,6 +144,7 @@
       padding-top: calc(56px + var(--safe-top));
       padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 10px);
       min-height: 100dvh;
+      scroll-padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 96px);
     }
 
     /* ============================================================
@@ -242,6 +244,7 @@
       animation: fadeUp 0.2s ease;
     }
     .inline-form.open { display: block; }
+    .inline-form, .form-grp, .form-actions { scroll-margin-bottom: calc(var(--nav-h) + var(--safe-bot) + 88px); }
     .form-title {
       font-family: var(--f-display);
       font-size: 1rem; font-weight: 700;
@@ -325,6 +328,8 @@
       width: min(380px, 100%);
       max-height: min(560px, calc(100dvh - 88px - var(--safe-top) - var(--safe-bot)));
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      scroll-padding-bottom: calc(var(--safe-bot) + 96px);
       background: var(--bg-card);
       border: 1px solid var(--border2);
       border-radius: var(--r);
@@ -436,6 +441,7 @@
       max-height: min(86dvh, 720px);
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+      scroll-padding-bottom: calc(var(--safe-bot) + 96px);
       background: var(--bg-card);
       border: 1px solid var(--border2);
       border-radius: 18px;
@@ -467,7 +473,7 @@
     .member-link:hover, .member-link:focus-visible { color: var(--accent-hi); text-decoration-color: var(--accent-hi); outline: none; }
     .profile-modal { position: fixed; inset: 0; z-index: 650; display: none; align-items: flex-end; justify-content: center; padding: 16px; background: rgba(0,0,0,0.68); }
     .profile-modal.open { display: flex; }
-    .profile-card { width: min(100%, 500px); max-height: min(86dvh, 760px); overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg-card); border: 1px solid var(--border2); border-radius: 20px 20px 14px 14px; padding: 16px; box-shadow: 0 18px 52px rgba(0,0,0,0.58); }
+    .profile-card { width: min(100%, 500px); max-height: min(86dvh, 760px); overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-padding-bottom: calc(var(--safe-bot) + 96px); background: var(--bg-card); border: 1px solid var(--border2); border-radius: 20px 20px 14px 14px; padding: 16px; box-shadow: 0 18px 52px rgba(0,0,0,0.58); }
     .profile-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
     .profile-head-main { flex: 1; min-width: 0; }
     .profile-name { font-family: var(--f-display); font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.05; }
@@ -1239,6 +1245,39 @@
       .photo-lightbox { padding-inline: 10px; }
       .photo-lightbox-close { top: 8px; right: 8px; }
     }
+
+    @media (max-width: 767px) {
+      html {
+        scroll-padding-bottom: calc(var(--nav-h) + var(--safe-bot) + var(--keyboard-inset) + 120px);
+      }
+      body.keyboard-open {
+        padding-bottom: calc(max(16px, var(--safe-bot)) + var(--keyboard-inset));
+      }
+      body.keyboard-open .main {
+        padding-bottom: calc(var(--nav-h) + var(--safe-bot) + var(--keyboard-inset) + 128px);
+      }
+      body.keyboard-open .inline-form.open {
+        margin-bottom: calc(var(--keyboard-inset) + 24px);
+      }
+      body.keyboard-open .form-actions {
+        padding-bottom: 8px;
+      }
+      body.keyboard-open .auth-panel,
+      body.keyboard-open .crew-modal,
+      body.keyboard-open .profile-modal {
+        padding-bottom: calc(max(16px, var(--safe-bot)) + var(--keyboard-inset));
+      }
+      body.keyboard-open .auth-card,
+      body.keyboard-open .crew-modal-card,
+      body.keyboard-open .profile-card {
+        max-height: min(86dvh, calc(100vh - var(--safe-top) - var(--safe-bot) - var(--keyboard-inset) - 32px));
+        scroll-padding-bottom: calc(var(--keyboard-inset) + var(--safe-bot) + 112px);
+      }
+      input, textarea, select, [contenteditable="true"] {
+        scroll-margin-bottom: calc(var(--keyboard-inset) + var(--nav-h) + var(--safe-bot) + 120px);
+      }
+    }
+
     @media (min-width: 600px) {
       .tab-section { padding: 22px 0; max-width: min(100%, 780px); margin: 0 auto; }
       .photo-grid  { grid-template-columns: repeat(3,minmax(0,1fr)); }
@@ -1913,6 +1952,98 @@
     const d = new Date();
     d.setDate(d.getDate() + n);
     return d.toISOString().split('T')[0];
+  }
+
+  // Mobile keyboard helper: keep focused form controls above iOS/Safari/PWA keyboards.
+  const focusableFormSelector = 'input:not([type="hidden"]), textarea, select, [contenteditable="true"]';
+  let keyboardFocusTimer = null;
+  let lastVisualViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+  function isKeyboardScrollCandidate(el) {
+    return !!(el && el.matches && el.matches(focusableFormSelector));
+  }
+
+  function shouldUseKeyboardScrolling() {
+    return window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+  }
+
+  function nearestScrollableParent(el) {
+    let parent = el ? el.parentElement : null;
+    while (parent && parent !== document.body) {
+      const style = window.getComputedStyle(parent);
+      const canScroll = /(auto|scroll)/.test(`${style.overflowY}${style.overflow}`);
+      if (canScroll && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      parent = parent.parentElement;
+    }
+    return null;
+  }
+
+  function updateKeyboardInset() {
+    const vv = window.visualViewport;
+    const layoutHeight = document.documentElement.clientHeight || window.innerHeight;
+    const viewportHeight = vv ? vv.height : window.innerHeight;
+    const offsetTop = vv ? vv.offsetTop : 0;
+    const inset = Math.max(0, Math.round(layoutHeight - viewportHeight - offsetTop));
+    const activeField = isKeyboardScrollCandidate(document.activeElement);
+    document.documentElement.style.setProperty('--keyboard-inset', `${inset}px`);
+    document.body.classList.toggle('keyboard-open', shouldUseKeyboardScrolling() && activeField && inset > 80);
+    lastVisualViewportHeight = viewportHeight;
+    return inset;
+  }
+
+  function scrollFieldIntoKeyboardSafeView(el) {
+    if (!shouldUseKeyboardScrolling() || !isKeyboardScrollCandidate(el)) return;
+
+    updateKeyboardInset();
+
+    const scrollParent = nearestScrollableParent(el);
+    if (scrollParent) {
+      const parentRect = scrollParent.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const targetTop = scrollParent.scrollTop + (elRect.top - parentRect.top) - (parentRect.height / 2) + (elRect.height / 2);
+      scrollParent.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+    }
+
+    const vv = window.visualViewport;
+    const viewportTop = vv ? vv.offsetTop : 0;
+    const viewportHeight = vv ? vv.height : window.innerHeight;
+    const rect = el.getBoundingClientRect();
+    const bottomBuffer = Math.max(120, Math.min(220, viewportHeight * 0.24));
+    const visibleBottom = viewportTop + viewportHeight - bottomBuffer;
+    const visibleTop = viewportTop + 72;
+
+    if (rect.bottom > visibleBottom || rect.top < visibleTop) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+  }
+
+  function scheduleKeyboardSafeScroll(el) {
+    if (!shouldUseKeyboardScrolling() || !isKeyboardScrollCandidate(el)) return;
+    document.body.classList.add('keyboard-open');
+    window.clearTimeout(keyboardFocusTimer);
+    keyboardFocusTimer = window.setTimeout(() => scrollFieldIntoKeyboardSafeView(el), 90);
+    window.setTimeout(() => { if (document.activeElement === el) scrollFieldIntoKeyboardSafeView(el); }, 340);
+  }
+
+  document.addEventListener('focusin', event => scheduleKeyboardSafeScroll(event.target));
+  document.addEventListener('focusout', () => {
+    window.setTimeout(() => {
+      if (!isKeyboardScrollCandidate(document.activeElement)) {
+        document.body.classList.remove('keyboard-open');
+        document.documentElement.style.setProperty('--keyboard-inset', '0px');
+      }
+    }, 140);
+  });
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      const heightDelta = Math.abs(window.visualViewport.height - lastVisualViewportHeight);
+      updateKeyboardInset();
+      if (heightDelta > 40 && isKeyboardScrollCandidate(document.activeElement)) {
+        scheduleKeyboardSafeScroll(document.activeElement);
+      }
+    });
+    window.visualViewport.addEventListener('scroll', updateKeyboardInset);
   }
 
   const SEED = {
