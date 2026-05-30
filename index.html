@@ -880,6 +880,20 @@
       border: 1px solid var(--border); border-radius: 6px;
       padding: 8px 12px; margin-bottom: 14px; line-height: 1.5;
     }
+    .cruise-active { display: none; }
+    .cruise-active.show {
+      display: block; margin-bottom: 14px; padding: 12px;
+      border: 1px solid var(--accent-border); border-radius: var(--r-sm);
+      background: var(--accent-lo);
+    }
+    .cruise-active-label {
+      font-family: var(--f-display); font-size: 0.76rem; font-weight: 800;
+      color: var(--accent); letter-spacing: 0.07em; text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .cruise-active-spot { font-size: 0.88rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .cruise-active-meta { font-size: 0.74rem; color: var(--text-2); line-height: 1.45; margin-top: 3px; }
+    .cruise-active-actions { display: flex; gap: 8px; margin-top: 10px; }
     .cruise-btns { display: flex; gap: 10px; }
     .checkin-form { margin-top: -4px; }
     .checkin-status {
@@ -1587,13 +1601,13 @@
           Cruise Mode
         </div>
         <div class="cruise-desc">
-          Share your live location with the crew during a cruise.
-          Location sharing is temporary and stops automatically when you end the session.
+          Share your current cruise spot with your crew for up to 4 hours.
+          Cruise Mode uses a manual check-in, not live GPS tracking.
         </div>
         <div class="cruise-note">
-          🔒 Your location is only visible to CruiseCrew members during active sessions.
-          Nothing is stored permanently once you stop sharing.
+          🔒 Cruise spots expire automatically after 4 hours. Your live GPS is not shared.
         </div>
+        <div class="cruise-active" id="cruise-active-panel"></div>
         <div class="cruise-btns">
           <button class="btn-cruise btn-start" id="cruise-start">📍 Start Cruise Mode</button>
           <button class="btn-cruise btn-stop dimmed" id="cruise-stop">⏹ Stop Sharing</button>
@@ -1601,7 +1615,7 @@
       </div>
 
       <div class="inline-form checkin-form" id="checkin-form">
-        <div class="form-title">Start Check-In</div>
+        <div class="form-title" id="checkin-form-title">Share Cruise Spot</div>
         <div class="checkin-status" id="checkin-status"></div>
         <div class="form-grid">
           <div class="form-grp">
@@ -1620,7 +1634,7 @@
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn-primary" id="save-checkin-btn">Start Sharing</button>
+          <button class="btn-primary" id="save-checkin-btn">Share Cruise Spot</button>
           <button class="btn-cancel" id="cancel-checkin-btn">Cancel</button>
         </div>
       </div>
@@ -1631,7 +1645,7 @@
       <div class="map-wrap">
         <div id="meet-map" aria-label="Global meet locations map"></div>
         <div class="map-note" id="meet-map-note">
-          <span>Global meet pins appear here when a meet has latitude and longitude.</span>
+          <span>Map shows meet locations. Live cruiser pins are not enabled yet.</span>
           <button class="btn-sm-ghost map-recenter-btn" type="button" id="map-recenter-btn">Re-center on me</button>
         </div>
       </div>
@@ -1639,13 +1653,13 @@
 
       <!-- Checked-in members -->
       <div class="sec-hdr" style="margin-top:4px">
-        <div class="sec-title">Checked <em>In</em></div>
+        <div class="sec-title">Active Cruise <em>Check-Ins</em></div>
       </div>
       <div class="card">
         <div class="card-body" id="checkin-list"></div>
       </div>
       <!-- Auto-expiry concept note -->
-      <div class="ci-footnote">⏱ Check-ins auto-expire after 4 hours for privacy.</div>
+      <div class="ci-footnote">⏱ Cruise spots expire automatically after 4 hours. Your live GPS is not shared.</div>
 
     </section><!-- /map -->
 
@@ -4644,7 +4658,7 @@
   }
 
   function setCheckinSaving(isSaving) {
-    ['save-checkin-btn','cancel-checkin-btn','cruise-start','cruise-stop','ci-location','ci-note','ci-meet'].forEach(id => {
+    ['save-checkin-btn','cancel-checkin-btn','cruise-start','cruise-stop','update-cruise-spot','stop-cruise-panel','ci-location','ci-note','ci-meet'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = isSaving;
     });
@@ -4653,7 +4667,7 @@
   function populateCheckinMeetOptions() {
     const select = document.getElementById('ci-meet');
     const today = new Date().toISOString().split('T')[0];
-    const upcoming = scopedMeets()
+    const upcoming = globalMeets()
       .filter(m => m.date >= today)
       .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`));
     select.innerHTML = '<option value="">No meet selected</option>' + upcoming.map(m =>
@@ -4661,8 +4675,15 @@
     ).join('');
   }
 
-  function openCheckinForm() {
+  function openCheckinForm(checkin = null) {
     populateCheckinMeetOptions();
+    const formTitle = document.getElementById('checkin-form-title');
+    const saveBtn = document.getElementById('save-checkin-btn');
+    if (formTitle) formTitle.textContent = checkin ? 'Update Cruise Spot' : 'Share Cruise Spot';
+    if (saveBtn) saveBtn.textContent = checkin ? 'Update Spot' : 'Share Cruise Spot';
+    document.getElementById('ci-location').value = checkin && checkin.location_text ? checkin.location_text : '';
+    document.getElementById('ci-note').value = checkin && checkin.note ? checkin.note : '';
+    document.getElementById('ci-meet').value = checkin && checkin.meet_id ? checkin.meet_id : '';
     setCheckinStatus('', '');
     document.getElementById('checkin-form').classList.add('open');
     document.getElementById('ci-location').focus();
@@ -4673,6 +4694,10 @@
     document.getElementById('ci-location').value = '';
     document.getElementById('ci-note').value = '';
     document.getElementById('ci-meet').value = '';
+    const formTitle = document.getElementById('checkin-form-title');
+    const saveBtn = document.getElementById('save-checkin-btn');
+    if (formTitle) formTitle.textContent = 'Share Cruise Spot';
+    if (saveBtn) saveBtn.textContent = 'Share Cruise Spot';
     setCheckinStatus('', '');
   }
 
@@ -4693,7 +4718,8 @@
     const pinText = mappedCount
       ? `${mappedCount} global meet${mappedCount === 1 ? '' : 's'} mapped. Pins stay visible no matter which crew is selected.`
       : 'No mapped meets yet. Add coordinates to a meet to show it here.';
-    return userMapLocationMessage ? `${pinText} ${userMapLocationMessage}` : pinText;
+    const cruiserPinNote = 'Map shows meet locations. Live cruiser pins are not enabled yet.';
+    return `${pinText} ${cruiserPinNote}${userMapLocationMessage ? ' ' + userMapLocationMessage : ''}`;
   }
 
   function setMapNote(message) {
@@ -4863,6 +4889,30 @@
     setTimeout(() => editMeet(id), 80);
   }
 
+  function renderActiveCruisePanel(mine) {
+    const panel = document.getElementById('cruise-active-panel');
+    if (!panel) return;
+    panel.classList.toggle('show', !!mine);
+    if (!mine) {
+      panel.innerHTML = '';
+      return;
+    }
+
+    const meetTitle = checkinMeetTitle(mine.meet_id);
+    panel.innerHTML = `
+      <div class="cruise-active-label">Cruise Mode Active</div>
+      <div class="cruise-active-spot">📍 ${esc(mine.location_text || 'Cruise spot shared')}</div>
+      ${meetTitle ? `<div class="cruise-active-meta">Meet: ${esc(meetTitle)}</div>` : ''}
+      ${mine.note ? `<div class="cruise-active-meta">Note: ${esc(mine.note)}</div>` : ''}
+      <div class="cruise-active-meta">⏱ ${esc(checkinExpiresText(mine.expires_at))} remaining</div>
+      <div class="cruise-active-actions">
+        <button class="btn-sm-ghost" type="button" id="update-cruise-spot">Update Spot</button>
+        <button class="btn-sm-ghost btn-sm-del" type="button" id="stop-cruise-panel">Stop Sharing</button>
+      </div>`;
+    document.getElementById('update-cruise-spot').addEventListener('click', () => openCheckinForm(mine));
+    document.getElementById('stop-cruise-panel').addEventListener('click', stopSharing);
+  }
+
   function renderCheckins() {
     renderMapSection();
     const checkins = activeCheckins();
@@ -4871,12 +4921,13 @@
     const startBtn = document.getElementById('cruise-start');
     const stopBtn = document.getElementById('cruise-stop');
 
+    renderActiveCruisePanel(mine);
     startBtn.style.opacity = mine ? '0.5' : '1';
     startBtn.textContent = mine ? '📍 Cruise Mode Active' : '📍 Start Cruise Mode';
     stopBtn.classList.toggle('dimmed', !mine);
 
     if (!currentUserId()) {
-      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">🔒</div><div class="empty-title">Sign In To View Check-Ins</div><div class="empty-sub">Cruise Mode is only visible to signed-in CruiseCrew members.</div></div>`;
+      el.innerHTML = `<div class="empty" style="padding:20px 0"><div class="empty-icon">🔒</div><div class="empty-title">Sign In To Share A Cruise Spot</div><div class="empty-sub">You can view the map, but you need to sign in before sharing your current cruise spot.</div></div>`;
       return;
     }
 
@@ -4906,8 +4957,9 @@
       promptSignIn('Sign in to start Cruise Mode.');
       return;
     }
-    if (myActiveCheckin()) {
-      toast('You already have an active check-in.');
+    const existing = myActiveCheckin();
+    if (existing) {
+      openCheckinForm(existing);
       return;
     }
     openCheckinForm();
@@ -4937,12 +4989,12 @@
     if (!currentUserId()) { promptSignIn('Sign in to start Cruise Mode.'); return; }
 
     const payload = buildCheckinPayload({ locationText, note, meetId });
+    const existing = myActiveCheckin();
 
     try {
       setCheckinSaving(true);
-      setCheckinStatus('loading', 'Starting your 4-hour check-in...');
+      setCheckinStatus('loading', existing ? 'Updating your cruise spot...' : 'Sharing your cruise spot for 4 hours...');
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      const existing = myActiveCheckin();
       if (existing) {
         const { error } = await supabaseClient.from('check_ins').update(payload).eq('id', existing.id).eq('user_id', currentUserId());
         if (error) throw error;
@@ -4954,7 +5006,7 @@
       await refreshCheckins(false);
       renderMeets();
       renderHome();
-      toast('📍 Cruise Mode active for 4 hours');
+      toast(existing ? '📍 Cruise spot updated for 4 hours' : '📍 Cruise Mode active for 4 hours');
     } catch (err) {
       console.error('Could not start check-in', err);
       setCheckinStatus('error', `Could not start check-in: ${err.message}`);
@@ -4983,7 +5035,7 @@
       await refreshCheckins(false);
       renderMeets();
       renderHome();
-      toast('⏹ Location sharing stopped');
+      toast('⏹ Cruise spot sharing stopped');
     } catch (err) {
       console.error('Could not stop check-in', err);
       toast(`Could not stop sharing: ${err.message}`);
