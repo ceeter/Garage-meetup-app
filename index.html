@@ -459,6 +459,59 @@
       line-height: 1.45;
     }
     .auth-required-note.show { display: block; }
+    .onboarding-card {
+      display: none;
+      margin: 14px 0 16px;
+      background: linear-gradient(135deg, rgba(232,68,26,0.12), rgba(255,255,255,0.035));
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r);
+      padding: clamp(14px, 4vw, 18px);
+      box-shadow: 0 14px 34px rgba(0,0,0,0.28);
+    }
+    .onboarding-card.show { display: block; }
+    .onboarding-kicker {
+      color: var(--accent-hi);
+      font-family: var(--f-display);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .onboarding-title {
+      font-family: var(--f-display);
+      font-size: clamp(1.25rem, 7vw, 1.7rem);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .onboarding-copy { color: var(--text-2); font-size: 0.86rem; line-height: 1.45; margin-top: 8px; }
+    .setup-checklist { display: grid; gap: 8px; margin: 14px 0; }
+    .setup-step {
+      display: flex; align-items: center; gap: 10px;
+      min-height: 40px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: rgba(255,255,255,0.035);
+      color: var(--text-2);
+      font-size: 0.84rem;
+    }
+    .setup-step.done { color: var(--green); border-color: rgba(34,197,94,0.26); background: rgba(34,197,94,0.08); }
+    .setup-step.todo { color: var(--text); border-color: var(--accent-border); background: var(--accent-lo); }
+    .setup-step.optional { color: var(--text-3); }
+    .setup-step-icon {
+      width: 22px; height: 22px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      font-size: 0.78rem;
+      flex: 0 0 auto;
+    }
+    .onboarding-actions { display: grid; gap: 9px; }
+    .onboarding-actions .btn-primary, .onboarding-actions .btn-ghost { width: 100%; min-height: 44px; }
+    .onboarding-success { color: var(--green); font-weight: 700; margin-top: 12px; font-size: 0.9rem; }
     .crew-switcher {
       display: none;
       gap: 8px;
@@ -1600,7 +1653,7 @@
         </div>
         <div class="auth-tabs" role="tablist" aria-label="Account action">
           <button class="auth-tab active" id="auth-mode-signin" type="button" role="tab" aria-selected="true">Sign In</button>
-          <button class="auth-tab" id="auth-mode-signup" type="button" role="tab" aria-selected="false">Sign Up</button>
+          <button class="auth-tab" id="auth-mode-signup" type="button" role="tab" aria-selected="false">Create Account</button>
         </div>
         <div class="auth-fields">
           <div class="form-grp">
@@ -1615,7 +1668,7 @@
         <div class="auth-actions">
           <button class="btn-primary" id="auth-signin-btn">Sign In</button>
           <button class="auth-helper-btn" id="auth-forgot-password-btn" type="button">Forgot password?</button>
-          <button class="auth-helper-btn" id="auth-signup-btn" type="button">New here? <strong>Create an account</strong></button>
+          <button class="auth-helper-btn" id="auth-signup-btn" type="button">New here? <strong>Create Account</strong></button>
           <button class="btn-cancel" id="auth-signout-btn">Sign Out</button>
         </div>
         <div class="auth-reset-request" id="auth-reset-request">
@@ -1665,6 +1718,8 @@
         <div class="hero-crew-description" id="home-crew-description"></div>
         <div class="hero-meta" id="home-meta">Loading crew stats...</div>
       </div>
+
+      <div class="onboarding-card" id="setup-onboarding-card" aria-live="polite"></div>
 
       <!-- Stats -->
       <div class="stats-row">
@@ -1751,7 +1806,7 @@
 
       <!-- Add/Edit Member inline form -->
       <div class="inline-form" id="add-member-form">
-        <div class="form-title" id="member-form-title">Create Garage Profile</div>
+        <div class="form-title" id="member-form-title">Set Up My Profile</div>
         <div class="form-grid">
           <div class="form-grp">
             <label class="form-lbl">Name *</label>
@@ -1787,7 +1842,7 @@
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn-primary" id="save-member-btn">Save Profile</button>
+          <button class="btn-primary" id="save-member-btn">Add My First Car</button>
           <button class="btn-cancel"  id="cancel-member-btn">Cancel</button>
         </div>
         <div class="form-status" id="member-form-status" role="status" aria-live="polite"></div>
@@ -3205,7 +3260,7 @@
           ? 'Create your account. Email verification may be required before you can sign in.'
           : 'Sign in to manage your garage, meets, RSVPs, photos, and crew updates.';
     signInBtn.textContent = isSignUp ? 'Create Account' : 'Sign In';
-    signUpBtn.innerHTML = isSignUp ? 'Already have an account? <strong>Sign in</strong>' : 'New here? <strong>Create an account</strong>';
+    signUpBtn.innerHTML = isSignUp ? 'Already have an account? <strong>Sign in</strong>' : 'New here? <strong>Create Account</strong>';
     password.autocomplete = isSignUp ? 'new-password' : 'current-password';
   }
 
@@ -3291,7 +3346,7 @@
     signInBtn.disabled = authUiSignedIn;
     signUpBtn.disabled = authUiSignedIn;
     addMemberBtn.disabled = false;
-    addMemberBtn.title = authUiSignedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
+    addMemberBtn.title = authUiSignedIn ? 'Set Up My Profile' : 'Sign in to set up your profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
     addMeetBtn.disabled = !isAdmin;
     addMeetBtn.style.display = isAdmin ? '' : 'none';
@@ -3391,7 +3446,8 @@
         updateAuthUI();
         handleInviteFromUrl();
         renderHome();
-        renderActiveTab();
+        if (needsFirstTimeSetup()) switchTab('home');
+        else renderActiveTab();
         setAuthStatus('success', message);
         closeAuthPanel();
         console.log('refresh completed');
@@ -4291,6 +4347,86 @@
     return appData.members.find(m => m.user_id === uid) || null;
   }
 
+  function mySetupState() {
+    const signedIn = !!currentUserId();
+    const profile = signedIn ? myMemberProfile() : null;
+    const profileComplete = !!(profile && String(profile.name || '').trim());
+    const hasGarageVehicle = !!(profile && String(profile.make || '').trim() && String(profile.model || '').trim());
+    const joinedCrew = signedIn && (appData.groupMemberships || []).some(m => m.user_id === currentUserId());
+    return { signedIn, profile, profileComplete, hasGarageVehicle, joinedCrew, ready: signedIn && profileComplete && hasGarageVehicle };
+  }
+
+  function needsFirstTimeSetup() {
+    const setup = mySetupState();
+    return setup.signedIn && (!setup.profileComplete || !setup.hasGarageVehicle);
+  }
+
+  function setupStepHtml(done, label, { optional = false } = {}) {
+    const statusClass = done ? 'done' : optional ? 'optional' : 'todo';
+    const icon = done ? '✓' : optional ? '○' : '!';
+    return `<div class="setup-step ${statusClass}"><span class="setup-step-icon" aria-hidden="true">${icon}</span><span>${esc(label)}</span></div>`;
+  }
+
+  function renderSetupOnboarding() {
+    const card = document.getElementById('setup-onboarding-card');
+    if (!card) return;
+
+    const setup = mySetupState();
+    if (!setup.signedIn) {
+      card.classList.remove('show');
+      card.innerHTML = '';
+      return;
+    }
+
+    const ctaLabel = !setup.profileComplete ? 'Set Up My Profile' : !setup.hasGarageVehicle ? 'Add My First Car' : '';
+    const checklist = [
+      setupStepHtml(setup.signedIn, 'Create Account / signed in'),
+      setupStepHtml(setup.profileComplete, 'Set Up My Profile'),
+      setupStepHtml(setup.hasGarageVehicle, 'Add first car to garage'),
+      setupStepHtml(setup.joinedCrew, 'Join or create a crew, optional', { optional: true })
+    ].join('');
+
+    card.classList.add('show');
+    if (setup.ready) {
+      card.innerHTML = `
+        <div class="onboarding-kicker">Setup complete</div>
+        <div class="onboarding-title">You're ready to cruise</div>
+        <div class="onboarding-copy">Your profile and first garage vehicle are set up so other members can see your build.</div>
+        <div class="onboarding-actions" style="margin-top:12px">
+          <button class="btn-ghost" type="button" onclick="switchTab('garage')">View My Garage</button>
+        </div>`;
+      return;
+    }
+
+    card.innerHTML = `
+      <div class="onboarding-kicker">First-time setup</div>
+      <div class="onboarding-title">Finish your CruiseCrew setup</div>
+      <div class="onboarding-copy">Welcome to CruiseCrew. Finish setting up your account so other members can see your profile and garage.</div>
+      <div class="setup-checklist">${checklist}</div>
+      <div class="onboarding-actions">
+        <button class="btn-primary" type="button" onclick="handleSetupPrimaryAction()">${esc(ctaLabel)}</button>
+        <button class="btn-ghost" type="button" onclick="handleSetupCrewAction()">Join or Create a Crew</button>
+      </div>`;
+  }
+
+  async function handleSetupPrimaryAction() {
+    switchTab('garage');
+    await openMyMemberForm();
+  }
+  window.handleSetupPrimaryAction = handleSetupPrimaryAction;
+
+  function handleSetupCrewAction() {
+    if (!currentUserId()) {
+      promptSignIn('Sign in to join or create a crew.');
+      return;
+    }
+    switchTab('home');
+    const crewSwitcher = document.getElementById('crew-switcher');
+    if (crewSwitcher) crewSwitcher.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast('Use New to create a crew or Join to enter an invite code.');
+  }
+  window.handleSetupCrewAction = handleSetupCrewAction;
+
   function upsertLocalMemberProfile(member) {
     const idx = appData.members.findIndex(m => m.user_id && m.user_id === member.user_id);
     if (idx > -1) appData.members[idx] = member;
@@ -5052,6 +5188,8 @@
       `${photos.length} photo drop${photos.length !== 1 ? 's' : ''} · ` +
       `${checkins.length} active check-in${checkins.length !== 1 ? 's' : ''}`;
 
+    renderSetupOnboarding();
+
     // Next meet preview
     const nextMeet = upcomingMeets[0];
     const nmEl = document.getElementById('home-next-meet');
@@ -5194,7 +5332,7 @@
     document.getElementById('garage-global-view').classList.toggle('active', appData.garageView === 'global');
 
     if (!members.length) {
-      el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-title">No cars in this crew yet.</div><div class="empty-sub">Switch to Global Garage to browse every profile.</div></div>`;
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🚗</div><div class="empty-title">Your garage is empty.</div><div class="empty-sub">Your garage is empty. Add your first vehicle so other members can see your build, mods, and photos.</div><button class="btn-primary" type="button" onclick="handleSetupPrimaryAction()" style="margin-top:14px">Add My First Car</button></div>`;
       return;
     }
 
@@ -5257,8 +5395,8 @@
       : myMemberProfile();
     fillMemberForm(mine || {});
     editingMemberId = mine ? mine.id : null;
-    document.getElementById('member-form-title').textContent = mine ? 'Edit Garage Profile' : 'Create Garage Profile';
-    document.getElementById('save-member-btn').textContent = mine ? 'Save Changes' : 'Save Profile';
+    document.getElementById('member-form-title').textContent = mine ? 'Edit Garage Profile' : 'Set Up My Profile';
+    document.getElementById('save-member-btn').textContent = mine ? 'Save Changes' : 'Add My First Car';
     setMemberFormSaving(false);
     setMemberFormStatus('', '');
     document.getElementById('add-member-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5362,8 +5500,8 @@
   function resetMemberForm() {
     editingMemberId = null;
     fillMemberForm({});
-    document.getElementById('member-form-title').textContent = 'Create Garage Profile';
-    document.getElementById('save-member-btn').textContent = 'Save Profile';
+    document.getElementById('member-form-title').textContent = 'Set Up My Profile';
+    document.getElementById('save-member-btn').textContent = 'Add My First Car';
     setMemberFormStatus('', '');
     setMemberFormSaving(false);
   }
