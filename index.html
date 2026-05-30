@@ -1038,7 +1038,7 @@
       background: linear-gradient(135deg, #181820 0%, #0E0E14 100%);
     }
     .photo-preview.show { display: block; }
-    .photo-help, .photo-status {
+    .photo-help, .photo-status, .photo-debug {
       font-size: 0.74rem;
       color: var(--text-3);
       line-height: 1.45;
@@ -1047,6 +1047,13 @@
     .photo-status.error { color: var(--red); }
     .photo-status.success { color: var(--green); }
     .photo-status.busy, .photo-status.warning { color: var(--amber); }
+    .photo-debug {
+      display: none;
+      margin-top: 8px;
+      color: var(--amber);
+      overflow-wrap: anywhere;
+    }
+    .photo-debug.show { display: block; }
     .photo-advanced {
       grid-column: 1 / -1;
       border: 1px solid var(--border);
@@ -1629,6 +1636,7 @@
           </details>
         </div>
         <div class="photo-status" id="photo-status" role="status" aria-live="polite"></div>
+        <div class="photo-debug" id="photo-debug" aria-live="polite"></div>
         <div class="form-actions">
           <button class="btn-primary" id="save-photo-btn">Drop It</button>
           <button class="btn-cancel"  id="cancel-photo-btn">Cancel</button>
@@ -1941,7 +1949,7 @@
       order: 'created_at',
       select: 'id, group_id, meet_id, user_id, member_id, image_url, storage_path, caption, display_name, car_label, spot_label, created_at',
       toDb: p => ({
-        id: p.id,
+        ...(isUuid(p.id) ? { id: p.id } : {}),
         group_id: p.group_id || selectedGroupId() || null,
         meet_id: p.meet_id || null,
         user_id: p.user_id || currentSessionUserId() || currentUserId(),
@@ -2173,6 +2181,10 @@
   function genId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
   }
 
   // Seed local fallback once on first load. Supabase starts empty unless you add data.
@@ -3228,6 +3240,10 @@
     }
 
     const dbRow = toDb(kind, row);
+    if (kind === 'photos') {
+      console.info('Supabase photo insert target table', DB[kind].table);
+      console.info('Supabase photo insert payload', dbRow);
+    }
     const { data, error } = await supabaseClient
       .from(DB[kind].table)
       .insert([dbRow])
@@ -3238,8 +3254,15 @@
       if (kind === 'photos') {
         error.insertPayload = dbRow;
         error.insertTable = DB[kind].table;
-        console.error('Supabase photo insert failed', error);
-        console.error('Supabase photo insert payload', dbRow);
+        console.error('Supabase photo insert failed', {
+          table: DB[kind].table,
+          payload: dbRow,
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          error
+        });
       } else if (kind === 'meets') console.error('Supabase meet insert failed', error);
       else console.error(`Could not add ${kind}`, error);
       throw error;
@@ -4458,6 +4481,20 @@
     el.className = `photo-status${message ? ' show' : ''}${type ? ' ' + type : ''}`;
   }
 
+  function setPhotoDebug(message) {
+    const el = document.getElementById('photo-debug');
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = `photo-debug${message ? ' show' : ''}`;
+  }
+
+  function photoInsertDebugMessage(err) {
+    const parts = [err && err.message, err && err.code, err && err.details, err && err.hint]
+      .map(part => String(part || '').trim())
+      .filter(Boolean);
+    return parts.length ? `Debug: ${parts.join(' | ')}` : 'Debug: photo insert failed, but Supabase did not return error details.';
+  }
+
   function setPhotoUploadBusy(isBusy) {
     photoUploadBusy = !!isBusy;
     ['save-photo-btn','cancel-photo-btn','ph-file','ph-url','ph-meet','ph-spot','ph-cap'].forEach(id => {
@@ -4611,6 +4648,7 @@
     preview.removeAttribute('src');
     preview.classList.remove('show');
     setPhotoStatus('', '');
+    setPhotoDebug('');
     if (!file) return;
     const validation = validatePhotoFile(file);
     if (validation) {
@@ -4620,6 +4658,7 @@
     }
     try {
       setPhotoStatus('busy', 'Preparing photo...');
+      setPhotoDebug('');
       await new Promise(resolve => setTimeout(resolve, 0));
       if (processId !== selectedPhotoProcessId) return;
       setPhotoStatus('busy', 'Compressing photo...');
@@ -4678,6 +4717,7 @@
     let phase = 'prepare';
     setPhotoUploadBusy(true);
     setPhotoStatus('busy', 'Preparing photo...');
+    setPhotoDebug('');
     try {
       phase = 'auth';
       const user = await currentSupabaseAuthUser();
@@ -4744,12 +4784,20 @@
       toast(`Photo posted for ${meet ? meet.title : (spotLabel || 'Photo Drop')} 📸`);
     } catch (err) {
       if (phase === 'post') {
-        console.error('Photo feed/database insert failed after Storage upload', err);
-        console.error('Photo feed/database insert payload', (err && err.insertPayload) || pendingPhotoInsertPayload);
+        console.error('Photo feed/database insert failed after Storage upload', {
+          table: (err && err.insertTable) || DB.photos.table,
+          payload: (err && err.insertPayload) || pendingPhotoInsertPayload,
+          message: err && err.message,
+          code: err && err.code,
+          details: err && err.details,
+          hint: err && err.hint,
+          error: err
+        });
       }
       if (uploadedPath) await cleanupUploadedPhoto(uploadedPath);
       const friendly = friendlyPhotoUploadError(err, phase);
       setPhotoStatus('error', friendly);
+      setPhotoDebug(phase === 'post' ? photoInsertDebugMessage(err) : '');
       toast(friendly);
       if (/sign in/i.test(friendly)) promptSignIn('Sign in to drop a photo.');
     } finally {
@@ -4776,7 +4824,10 @@
     }
     const meetSelect = document.getElementById('ph-meet');
     if (meetSelect) meetSelect.value = '';
-    if (!preserveStatus) setPhotoStatus('', '');
+    if (!preserveStatus) {
+      setPhotoStatus('', '');
+      setPhotoDebug('');
+    }
   }
 
   function openPhotoLightbox(id) {
