@@ -2097,14 +2097,18 @@
   // Keep this list in sync with the matching admin email list in supabase/schema.sql.
   const ADMIN_EMAILS = ["chancecampbell97@live.com"];
 
-  // App version is manually controlled in /version.json.
+  // App version is manually controlled here and in /version.json.
+  const APP_VERSION = '0.0.1';
   const VERSION_URL = '/version.json';
   const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-  const APP_VERSION_STORAGE_KEY = 'cruisecrew_loaded_app_version';
   const APP_VERSION_PENDING_KEY = 'cruisecrew_pending_refresh_version';
-  let loadedAppVersion = localStorage.getItem(APP_VERSION_STORAGE_KEY) || '';
+  const APP_CONTROLLER_RELOAD_KEY = 'cruisecrew_controller_reload_at';
+  let loadedAppVersion = APP_VERSION;
   let latestRemoteVersion = '';
   let updateBannerVisible = false;
+  let serviceWorkerRegistration = null;
+  let expectingControllerReload = false;
+  let refreshingForControllerChange = false;
 
   // Helper: date string N days from today
   function futureDate(n) {
@@ -6791,9 +6795,7 @@ ${JSON.stringify({
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`version fetch failed (${res.status})`);
     const data = await res.json();
-    const version = normalizeVersionValue(data.version);
-    console.log('CruiseCrew remote version fetched', version);
-    return version;
+    return normalizeVersionValue(data.version);
   }
 
   function showUpdateBanner(version) {
@@ -6803,53 +6805,73 @@ ${JSON.stringify({
     banner.textContent = `New CruiseCrew update available. Tap to refresh.`;
     banner.classList.add('show');
     updateBannerVisible = true;
-    console.log('CruiseCrew update banner shown', { loadedAppVersion, remoteVersion: version });
+    console.log('Update banner shown', { loadedAppVersion, remoteVersion: version });
   }
 
   async function clearOldAppCaches() {
     if (!('caches' in window)) return;
+    const currentCacheName = `cruisecrew-cache-${latestRemoteVersion || loadedAppVersion || 'unversioned'}`;
     const keys = await caches.keys();
     await Promise.all(keys
-      .filter(key => key.startsWith('cruisecrew-'))
+      .filter(key => key.startsWith('cruisecrew-cache-') && key !== currentCacheName)
       .map(key => caches.delete(key).then(deleted => {
         if (deleted) console.log('CruiseCrew old cache deleted', key);
       })));
   }
 
+  function sendSkipWaitingToServiceWorker() {
+    if (!serviceWorkerRegistration || !serviceWorkerRegistration.waiting) return false;
+    expectingControllerReload = true;
+    serviceWorkerRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    console.log('SKIP_WAITING sent');
+    return true;
+  }
+
   async function refreshForUpdate() {
     console.log('CruiseCrew update refresh requested', { remoteVersion: latestRemoteVersion });
     try {
+      if (latestRemoteVersion) localStorage.setItem(APP_VERSION_PENDING_KEY, latestRemoteVersion);
+      const skipWaitingSent = sendSkipWaitingToServiceWorker();
       await clearOldAppCaches();
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         await Promise.all(registrations.map(reg => reg.update().catch(err => console.warn('CruiseCrew service worker update request failed', err))));
       }
-      if (latestRemoteVersion) localStorage.setItem(APP_VERSION_PENDING_KEY, latestRemoteVersion);
+      if (skipWaitingSent) {
+        window.setTimeout(() => {
+          if (!refreshingForControllerChange) window.location.reload();
+        }, 1500);
+      } else {
+        window.location.reload();
+      }
     } catch (err) {
       console.warn('CruiseCrew update cleanup failed before reload', err);
-    } finally {
       window.location.reload();
     }
   }
 
   async function checkForAppUpdate({ initial = false } = {}) {
     try {
+      console.log('Checking CruiseCrew app version…');
+      if ('serviceWorker' in navigator) {
+        const reg = serviceWorkerRegistration || await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          serviceWorkerRegistration = reg;
+          reg.update().catch(err => console.warn('CruiseCrew service worker update request failed', err));
+        }
+      }
       const remoteVersion = await fetchRemoteVersion();
       latestRemoteVersion = remoteVersion;
-      const pendingVersion = localStorage.getItem(APP_VERSION_PENDING_KEY) || '';
-      if (!loadedAppVersion || (pendingVersion && pendingVersion === remoteVersion)) {
-        loadedAppVersion = remoteVersion;
-        localStorage.setItem(APP_VERSION_STORAGE_KEY, remoteVersion);
-        localStorage.removeItem(APP_VERSION_PENDING_KEY);
-        console.log('CruiseCrew app version loaded', loadedAppVersion);
-        setVersionFooter(loadedAppVersion);
-        return;
-      }
-      console.log('CruiseCrew app version loaded', loadedAppVersion);
+      loadedAppVersion = normalizeVersionValue(APP_VERSION);
+      console.log(`Current version: ${loadedAppVersion}`);
+      console.log(`Remote version: ${remoteVersion}`);
       setVersionFooter(loadedAppVersion);
-      if (remoteVersion && normalizeVersionValue(remoteVersion) !== normalizeVersionValue(loadedAppVersion)) {
-        console.log('CruiseCrew version mismatch detected', { loadedAppVersion, remoteVersion });
+      if (remoteVersion && remoteVersion !== loadedAppVersion) {
+        console.log('Version mismatch detected', { loadedAppVersion, remoteVersion });
         showUpdateBanner(remoteVersion);
+      } else {
+        localStorage.removeItem(APP_VERSION_PENDING_KEY);
+        console.log('No update found');
       }
     } catch (err) {
       console.warn('CruiseCrew version check failed', err);
@@ -6861,7 +6883,16 @@ ${JSON.stringify({
     setVersionFooter(loadedAppVersion);
     const banner = document.getElementById('update-banner');
     if (banner) banner.addEventListener('click', refreshForUpdate);
+    const footer = document.getElementById('app-version-footer');
+    if (footer) {
+      footer.title = 'Tap to check for a CruiseCrew update';
+      footer.addEventListener('click', () => checkForAppUpdate());
+    }
     checkForAppUpdate({ initial: true });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkForAppUpdate();
+    });
+    window.addEventListener('focus', () => checkForAppUpdate());
     window.setInterval(() => checkForAppUpdate(), VERSION_CHECK_INTERVAL_MS);
   }
 
@@ -6870,13 +6901,22 @@ ${JSON.stringify({
     window.addEventListener('load', async () => {
       try {
         const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+        serviceWorkerRegistration = reg;
         console.log('CruiseCrew service worker registered', reg.scope);
+        reg.update().catch(err => console.warn('CruiseCrew service worker update request failed', err));
+        if (reg.waiting) {
+          console.log('Service worker waiting');
+          showUpdateBanner(latestRemoteVersion || loadedAppVersion);
+        }
         reg.addEventListener('updatefound', () => {
-          console.log('CruiseCrew service worker update found');
+          console.log('Service worker update found');
           const worker = reg.installing;
           if (!worker) return;
           worker.addEventListener('statechange', () => {
-            if (worker.state === 'activated') console.log('CruiseCrew new service worker activated');
+            if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('Service worker waiting');
+              showUpdateBanner(latestRemoteVersion || loadedAppVersion);
+            }
           });
         });
       } catch (err) {
@@ -6884,7 +6924,15 @@ ${JSON.stringify({
       }
     });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      console.log('CruiseCrew new service worker activated');
+      if (!expectingControllerReload) return;
+      if (refreshingForControllerChange) return;
+      const lastReload = Number(sessionStorage.getItem(APP_CONTROLLER_RELOAD_KEY) || 0);
+      const now = Date.now();
+      if (now - lastReload < 10000) return;
+      refreshingForControllerChange = true;
+      sessionStorage.setItem(APP_CONTROLLER_RELOAD_KEY, String(now));
+      console.log('Controller changed, reloading');
+      window.location.reload();
     });
   }
 

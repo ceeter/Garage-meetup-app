@@ -39,8 +39,14 @@ self.addEventListener('install', event => {
     const version = await getFreshAppVersion();
     activeCacheName = `${CACHE_PREFIX}-${version}`;
     console.log('CruiseCrew service worker installing', { version, cache: activeCacheName });
-    await self.skipWaiting();
   })());
+});
+
+
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', event => {
