@@ -988,10 +988,28 @@
     .ci-name { font-size: 0.85rem; font-weight: 500; }
     .ci-car  { font-size: 0.72rem; color: var(--text-3); }
     .ci-exp  {
-      margin-left: auto; flex-shrink: 0;
       font-family: var(--f-display); font-size: 0.68rem; font-weight: 700;
       color: var(--amber); letter-spacing: 0.04em;
     }
+    .ci-actions {
+      margin-left: auto; flex-shrink: 0; min-width: 112px;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    }
+    .ci-join-count { font-size: 0.72rem; color: var(--text-3); }
+    .ci-join-btn {
+      min-height: 36px; padding: 7px 10px; border-radius: 999px;
+      background: var(--accent); color: #fff;
+      font-family: var(--f-display); font-size: 0.7rem; font-weight: 800;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      box-shadow: 0 0 12px var(--accent-glow);
+      transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+    }
+    .ci-join-btn:hover { background: var(--accent-hi); }
+    .ci-join-btn.joined {
+      background: transparent; border: 1px solid var(--green);
+      color: var(--green); box-shadow: none;
+    }
+    .ci-join-btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .ci-footnote {
       font-size: 0.72rem; color: var(--text-3);
       text-align: center; margin-top: 12px;
@@ -1244,6 +1262,10 @@
       .photo-card.wide .photo-thumb { aspect-ratio: 4/3; }
       .photo-lightbox { padding-inline: 10px; }
       .photo-lightbox-close { top: 8px; right: 8px; }
+      .ci-item { align-items: flex-start; flex-wrap: wrap; }
+      .ci-actions { width: 100%; margin-left: 46px; align-items: stretch; }
+      .ci-join-count { text-align: center; }
+      .ci-join-btn { width: 100%; }
     }
 
     @media (max-width: 767px) {
@@ -2203,6 +2225,7 @@
     photos: [],
     announcements: [],
     checkins: [],
+    cruiseJoins: [],
     groups: [],
     groupMemberships: [],
     selectedGroupId: localStorage.getItem(LS.selectedGroup) || '',
@@ -2702,6 +2725,7 @@
     appData.currentUser = null;
     appData.rsvps = [];
     appData.checkins = [];
+    appData.cruiseJoins = [];
     appData.groupMemberships = [];
     appData.selectedGroupId = '';
     localStorage.removeItem(LS.selectedGroup);
@@ -3665,6 +3689,7 @@
     const nowIso = new Date().toISOString();
     if (!isSupabaseReady()) {
       appData.checkins = [];
+      appData.cruiseJoins = [];
       return [];
     }
 
@@ -3679,11 +3704,34 @@
       console.error('Could not load check-ins', error);
       if (showError) toast(`Could not load check-ins: ${error.message}`);
       appData.checkins = [];
+      appData.cruiseJoins = [];
       return [];
     }
 
     appData.checkins = data || [];
+    await loadCruiseJoins(showError);
     return appData.checkins;
+  }
+
+  async function loadCruiseJoins(showError = true) {
+    appData.cruiseJoins = [];
+    const checkInIds = (appData.checkins || []).map(c => c.id).filter(Boolean);
+    if (!isSupabaseReady() || !currentUserId() || !checkInIds.length) return [];
+
+    const { data, error } = await supabaseClient
+      .from('cruise_joins')
+      .select('*')
+      .in('check_in_id', checkInIds)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Could not load cruise joins', error);
+      if (showError) toast(`Could not load cruise joins: ${error.message}`);
+      return [];
+    }
+
+    appData.cruiseJoins = data || [];
+    return appData.cruiseJoins;
   }
 
   async function refreshCheckins(showError = false) {
@@ -4765,6 +4813,7 @@
   window.deleteMeet = deleteMeet;
   window.setRsvp   = setRsvp;
   window.checkIn   = checkIn;
+  window.toggleCruiseJoin = toggleCruiseJoin;
 
 
   // ==============================================================
@@ -5168,6 +5217,23 @@
     document.getElementById('stop-cruise-panel').addEventListener('click', stopSharing);
   }
 
+  function cruiseJoinRows(checkInId) {
+    return (appData.cruiseJoins || []).filter(join => join.check_in_id === checkInId);
+  }
+
+  function hasJoinedCruise(checkInId) {
+    const uid = currentUserId();
+    return !!uid && cruiseJoinRows(checkInId).some(join => join.user_id === uid);
+  }
+
+  function cruiseJoinButton(checkin) {
+    const uid = currentUserId();
+    if (!uid || !checkin || checkin.user_id === uid) return '';
+    const joined = hasJoinedCruise(checkin.id);
+    const label = joined ? 'Leave Cruise' : 'Join Cruise';
+    return `<button class="ci-join-btn${joined ? ' joined' : ''}" type="button" onclick="toggleCruiseJoin('${esc(checkin.id)}')">${esc(label)}</button>`;
+  }
+
   function renderCheckins() {
     renderMapSection();
     const checkins = activeCheckins();
@@ -5193,6 +5259,8 @@
 
     el.innerHTML = checkins.map(c => {
       const meetTitle = checkinMeetTitle(c.meet_id);
+      const joinCount = cruiseJoinRows(c.id).length;
+      const joinButton = cruiseJoinButton(c);
       return `<div class="ci-item">
         <div class="ci-av">${esc(initials(c.display_name))}</div>
         <div class="ci-main">
@@ -5202,9 +5270,50 @@
           ${c.note ? `<div class="ci-note">${esc(c.note)}</div>` : ''}
           ${meetTitle ? `<div class="ci-meet">Meet: ${esc(meetTitle)}</div>` : ''}
         </div>
-        <div class="ci-exp">⏱ ${esc(checkinExpiresText(c.expires_at))}</div>
+        <div class="ci-actions">
+          <div class="ci-exp">⏱ ${esc(checkinExpiresText(c.expires_at))}</div>
+          <div class="ci-join-count">${joinCount} joining</div>
+          ${joinButton}
+        </div>
       </div>`;
     }).join('');
+  }
+
+  async function toggleCruiseJoin(checkInId) {
+    const uid = currentUserId();
+    if (!uid) { promptSignIn('Sign in to join a cruise.'); return; }
+    if (!isSupabaseReady()) { toast('Supabase is required to join cruises.'); return; }
+    const checkin = (appData.checkins || []).find(c => c.id === checkInId);
+    if (!checkin) { toast('That cruise spot is no longer active.'); return; }
+    if (checkin.user_id === uid) return;
+
+    const joined = hasJoinedCruise(checkInId);
+    const buttons = Array.from(document.querySelectorAll(`.ci-join-btn[onclick*="${checkInId}"]`));
+    buttons.forEach(btn => { btn.disabled = true; btn.textContent = joined ? 'Leaving...' : 'Joining...'; });
+
+    try {
+      if (joined) {
+        const { error } = await supabaseClient
+          .from('cruise_joins')
+          .delete()
+          .eq('check_in_id', checkInId)
+          .eq('user_id', uid);
+        if (error) throw error;
+        toast('Left cruise');
+      } else {
+        const { error } = await supabaseClient
+          .from('cruise_joins')
+          .insert([{ check_in_id: checkInId, user_id: uid }]);
+        if (error && error.code !== '23505') throw error;
+        toast('Joined cruise');
+      }
+      await loadCruiseJoins(false);
+      renderCheckins();
+    } catch (err) {
+      console.error('Could not update cruise join', err);
+      toast(`Could not update cruise join: ${err.message}`);
+      renderCheckins();
+    }
   }
 
   async function startCheckin() {

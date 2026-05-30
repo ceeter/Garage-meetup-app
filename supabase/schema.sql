@@ -105,6 +105,14 @@ create table if not exists public.check_ins (
   ended_at timestamp with time zone
 );
 
+create table if not exists public.cruise_joins (
+  id uuid primary key default gen_random_uuid(),
+  check_in_id uuid references public.check_ins(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique(check_in_id, user_id)
+);
+
 create table if not exists public.photo_drops (
   id uuid primary key default gen_random_uuid(),
   meet_id uuid references public.meets(id) on delete cascade,
@@ -200,6 +208,9 @@ begin
 end $$;
 alter table public.check_ins add column if not exists expires_at timestamp with time zone default now() + interval '4 hours';
 alter table public.check_ins add column if not exists ended_at timestamp with time zone;
+alter table public.cruise_joins add column if not exists check_in_id uuid references public.check_ins(id) on delete cascade;
+alter table public.cruise_joins add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.cruise_joins add column if not exists created_at timestamptz default now();
 
 alter table public.group_invites add column if not exists group_id uuid references public.groups(id) on delete cascade;
 alter table public.group_invites add column if not exists code text;
@@ -217,6 +228,9 @@ create index if not exists check_ins_expires_at_idx on public.check_ins(expires_
 create unique index if not exists check_ins_user_id_key on public.check_ins(user_id);
 create index if not exists check_ins_user_id_idx on public.check_ins(user_id);
 create index if not exists check_ins_group_id_idx on public.check_ins(group_id);
+create index if not exists cruise_joins_check_in_id_idx on public.cruise_joins(check_in_id);
+create index if not exists cruise_joins_user_id_idx on public.cruise_joins(user_id);
+create unique index if not exists cruise_joins_check_in_id_user_id_key on public.cruise_joins(check_in_id, user_id);
 create index if not exists groups_owner_id_idx on public.groups(owner_id);
 create index if not exists group_memberships_group_id_idx on public.group_memberships(group_id);
 create index if not exists group_memberships_user_id_idx on public.group_memberships(user_id);
@@ -532,6 +546,7 @@ alter table public.members enable row level security;
 alter table public.meets enable row level security;
 alter table public.meet_rsvps enable row level security;
 alter table public.check_ins enable row level security;
+alter table public.cruise_joins enable row level security;
 alter table public.photo_drops enable row level security;
 alter table public.announcements enable row level security;
 
@@ -658,6 +673,19 @@ create policy "users can insert own check in" on public.check_ins
 create policy "users can update own check in" on public.check_ins
   for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "users can delete own check in" on public.check_ins
+  for delete to authenticated using (auth.uid() = user_id);
+
+-- Cruise joins are separate from meet RSVPs. Signed-in users can see who is
+-- joining active cruise spots and manage only their own join row.
+drop policy if exists "authenticated can read cruise joins" on public.cruise_joins;
+drop policy if exists "users can insert own cruise join" on public.cruise_joins;
+drop policy if exists "users can delete own cruise join" on public.cruise_joins;
+
+create policy "authenticated can read cruise joins" on public.cruise_joins
+  for select to authenticated using (true);
+create policy "users can insert own cruise join" on public.cruise_joins
+  for insert to authenticated with check (auth.uid() = user_id);
+create policy "users can delete own cruise join" on public.cruise_joins
   for delete to authenticated using (auth.uid() = user_id);
 
 -- Meets are publicly readable, but only admin emails can create or manage meet rows.
