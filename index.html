@@ -1512,6 +1512,9 @@
         <div class="form-title" id="meet-form-ttl">Create Meet</div>
         <!-- Hidden: stores ID when editing -->
         <input type="hidden" id="edit-meet-id">
+        <input type="hidden" id="meet-geocoded-address">
+        <input type="hidden" id="meet-geocode-provider">
+        <input type="hidden" id="meet-place-id">
         <div class="form-grid">
           <div class="form-grp">
             <label class="form-lbl">Meet Name *</label>
@@ -1531,6 +1534,10 @@
             <label class="form-lbl">Location / Spot *</label>
             <input type="text" class="form-inp" id="meet-loc" placeholder="e.g. Harbor Parking Garage, Level 2">
           </div>
+          <div class="form-grp">
+            <button class="btn-ghost" type="button" id="find-meet-map-btn">Find on map</button>
+            <div class="form-status" id="meet-map-status" role="status" aria-live="polite"></div>
+          </div>
           <div class="form-2col">
             <div class="form-grp">
               <label class="form-lbl">Latitude <span style="color:var(--text-3);font-weight:500">(optional)</span></label>
@@ -1542,7 +1549,7 @@
             </div>
           </div>
           <div class="form-grp">
-            <div class="form-help">Optional for MVP maps: add coordinates to show this meet as a pin. Leave blank if you only know the spot name.</div>
+            <div class="form-help">Click Find on map to geocode the location, or enter coordinates manually. Blank coordinates save without a map pin.</div>
           </div>
           <div class="form-grp">
             <label class="form-lbl">Description</label>
@@ -2003,9 +2010,12 @@
         if (Object.prototype.hasOwnProperty.call(m, 'latitude')) row.latitude = m.latitude === null || m.latitude === '' ? null : Number(m.latitude);
         if (Object.prototype.hasOwnProperty.call(m, 'longitude')) row.longitude = m.longitude === null || m.longitude === '' ? null : Number(m.longitude);
         if (m.location_label !== undefined || m.locationLabel !== undefined) row.location_label = m.location_label || m.locationLabel || m.location || null;
+        if (m.geocoded_address !== undefined || m.geocodedAddress !== undefined) row.geocoded_address = m.geocoded_address || m.geocodedAddress || null;
+        if (m.geocode_provider !== undefined || m.geocodeProvider !== undefined) row.geocode_provider = m.geocode_provider || m.geocodeProvider || null;
+        if (m.place_id !== undefined || m.placeId !== undefined) row.place_id = m.place_id || m.placeId || null;
         return row;
       },
-      fromDb: m => ({ ...m, desc: m.description || '', locationLabel: m.location_label || m.location || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
+      fromDb: m => ({ ...m, desc: m.description || '', locationLabel: m.location_label || m.location || '', geocodedAddress: m.geocoded_address || '', geocodeProvider: m.geocode_provider || '', placeId: m.place_id || '', myRsvp: normalizeRsvpStatus(m.my_rsvp) || null, checkedIn: !!m.checked_in, createdBy: m.created_by || null, rsvp: normalizeRsvpCounts(m.rsvp) })
     },
     photos: {
       table: 'photo_drops',
@@ -2186,7 +2196,7 @@
   }
 
   function meetHasCoordinates(meet) {
-    return meetLatitude(meet) !== null && meetLongitude(meet) !== null;
+    return !!validMapCoordinates(meet && meet.latitude, meet && meet.longitude);
   }
 
   function meetLocationLabel(meet) {
@@ -4298,6 +4308,71 @@
   });
 
 
+  function setMeetMapStatus(type, message) {
+    const el = document.getElementById('meet-map-status');
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = `form-status${message ? ' show' : ''}${type ? ` ${type}` : ''}`;
+  }
+
+  function setMeetGeocodeFields(result = {}) {
+    document.getElementById('meet-geocoded-address').value = result.formattedAddress || '';
+    document.getElementById('meet-geocode-provider').value = result.provider || '';
+    document.getElementById('meet-place-id').value = result.placeId || '';
+  }
+
+  function clearMeetGeocodeFields() {
+    setMeetGeocodeFields({});
+    setMeetMapStatus('', '');
+  }
+
+  function geocodeErrorMessage(data, error) {
+    const message = (data && data.error) || (error && error.message) || '';
+    if (/no results/i.test(message)) return 'Could not find that location. Try adding city/state or a more complete address.';
+    if (/missing query/i.test(message)) return 'Enter a location first.';
+    return message || 'Could not find that location. Try adding city/state or a more complete address.';
+  }
+
+  async function findMeetOnMap() {
+    const query = document.getElementById('meet-loc').value.trim();
+    if (!query) {
+      setMeetMapStatus('error', 'Enter a location first.');
+      return;
+    }
+    if (!isSupabaseReady() || !supabaseClient.functions) {
+      setMeetMapStatus('error', 'Map lookup needs the Supabase geocoding function.');
+      return;
+    }
+
+    const button = document.getElementById('find-meet-map-btn');
+    button.disabled = true;
+    setMeetMapStatus('loading', 'Finding map location…');
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('geocode-meet-location', { body: { query } });
+      if (error || !data || data.error) {
+        setMeetMapStatus('error', geocodeErrorMessage(data, error));
+        return;
+      }
+      const coords = validMapCoordinates(data.latitude, data.longitude);
+      if (!coords) {
+        setMeetMapStatus('error', 'Could not find that location. Try adding city/state or a more complete address.');
+        return;
+      }
+      document.getElementById('meet-lat').value = coords.latitude;
+      document.getElementById('meet-lng').value = coords.longitude;
+      setMeetGeocodeFields(data);
+      setMeetMapStatus('success', 'Map location found.');
+    } catch (err) {
+      console.error('Meet geocoding failed', err);
+      setMeetMapStatus('error', 'Could not find that location. Try adding city/state or a more complete address.');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  document.getElementById('find-meet-map-btn').addEventListener('click', findMeetOnMap);
+  document.getElementById('meet-loc').addEventListener('input', clearMeetGeocodeFields);
+
   function optionalCoordinateInput(id, min, max, label) {
     const raw = document.getElementById(id).value.trim();
     if (!raw) return null;
@@ -4340,9 +4415,12 @@
       id: editId || genId(), title, date,
       time:     document.getElementById('meet-time').value,
       location: loc,
-      locationLabel: loc,
+      locationLabel: document.getElementById('meet-geocoded-address').value.trim() || loc,
       latitude,
       longitude,
+      geocodedAddress: document.getElementById('meet-geocoded-address').value.trim() || null,
+      geocodeProvider: document.getElementById('meet-geocode-provider').value.trim() || null,
+      placeId: document.getElementById('meet-place-id').value.trim() || null,
       desc:     document.getElementById('meet-desc').value.trim(),
       rsvp:     emptyRsvpCounts(),
       myRsvp:   null,
@@ -4380,6 +4458,7 @@
       document.getElementById(id).value = '';
     });
     document.getElementById('edit-meet-id').value = '';
+    clearMeetGeocodeFields();
   }
 
   // Open form pre-filled for editing
@@ -4401,6 +4480,8 @@
     document.getElementById('meet-loc').value   = m.location || '';
     document.getElementById('meet-lat').value   = meetLatitude(m) === null ? '' : meetLatitude(m);
     document.getElementById('meet-lng').value   = meetLongitude(m) === null ? '' : meetLongitude(m);
+    setMeetGeocodeFields({ formattedAddress: m.geocodedAddress || '', provider: m.geocodeProvider || '', placeId: m.placeId || '' });
+    setMeetMapStatus('', '');
     document.getElementById('meet-desc').value  = m.desc || '';
     const form = document.getElementById('add-meet-form');
     form.classList.add('open');
