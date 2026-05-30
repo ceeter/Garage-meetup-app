@@ -2555,7 +2555,8 @@
     currentUser: null,
     currentSession: null,
     activeInvite: null,
-    crewSettingsBusy: false
+    crewSettingsBusy: false,
+    memberCounts: { global: 0, byGroup: {} }
   };
 
   const DEFAULT_MAP_CENTER = { latitude: 39.7684, longitude: -86.1581 };
@@ -2651,6 +2652,26 @@
 
   function garageMembers() {
     return appData.garageView === 'global' ? (appData.members || []) : scopedMembers();
+  }
+
+  function selectedMemberCount() {
+    const counts = appData.memberCounts || { global: 0, byGroup: {} };
+    const gid = selectedGroupId();
+    if (gid) return Number((counts.byGroup || {})[gid] || 0);
+    return Number(counts.global || 0);
+  }
+
+  function syncMemberCountsFromState() {
+    const byGroup = {};
+    (appData.groupMemberships || []).forEach(membership => {
+      if (!membership || !membership.group_id) return;
+      byGroup[membership.group_id] = (byGroup[membership.group_id] || 0) + 1;
+    });
+    appData.memberCounts = {
+      global: (appData.members || []).length,
+      byGroup
+    };
+    return appData.memberCounts;
   }
 
   function globalMeets() {
@@ -2978,6 +2999,12 @@
   let authRefreshPromise = null;
   let authTransitionVersion = 0;
   let notificationChannel = null;
+  let memberCountsChannel = null;
+  let memberCountsPollTimer = null;
+  let memberCountsRefreshPromise = null;
+  let lastMemberCountsRefreshAt = 0;
+  const MEMBER_COUNTS_POLL_MS = 45 * 1000;
+  const MEMBER_COUNTS_MIN_REFRESH_MS = 5 * 1000;
 
   function lsGet(key) {
     try { return JSON.parse(localStorage.getItem(key)) || []; }
@@ -3094,6 +3121,7 @@
     appData.groupMemberships = [];
     appData.notifications = [];
     teardownNotificationsRealtime();
+    teardownMemberCountsRealtime();
     closeNotificationsPanel();
     appData.selectedGroupId = '';
     localStorage.removeItem(LS.selectedGroup);
@@ -3355,6 +3383,7 @@
         }
 
         await loadAllData(false, false);
+        await refreshMemberCounts(false, { render: false, force: true });
         await fetchNotifications(false);
         await createDueMeetReminderNotifications(false);
         setupNotificationsRealtime();
@@ -4076,10 +4105,13 @@
       }
       closeCrewSettings();
       await loadGroups(false);
+      await refreshMemberCounts(false, { render: false, force: true });
       const nextGroup = (appData.groupMemberships || []).find(m => m.user_id === currentUserId());
       appData.selectedGroupId = nextGroup ? nextGroup.group_id : '';
       if (appData.selectedGroupId) localStorage.setItem(LS.selectedGroup, appData.selectedGroupId);
       else localStorage.removeItem(LS.selectedGroup);
+      setupMemberCountsRealtime();
+      await refreshMemberCounts(false, { render: false, force: true });
       renderGroupSwitcher();
       renderHome();
       renderActiveTab();
@@ -4141,6 +4173,8 @@
       clearPendingInvite('invite joined');
       clearInviteFromUrl();
       closeJoinModal({ clearPending: false });
+      setupMemberCountsRealtime();
+      await refreshMemberCounts(false, { render: false, force: true });
       renderGroupSwitcher();
       renderHome();
       renderActiveTab();
@@ -4200,6 +4234,7 @@
       appData.selectedGroupId = group.id;
       localStorage.setItem(LS.selectedGroup, group.id);
       await loadAllData(false, false);
+      await refreshMemberCounts(false, { render: false, force: true });
       renderHome();
       renderActiveTab();
       toast(`Created ${group.name}`);
@@ -4222,6 +4257,7 @@
       throw error;
     }
     await loadGroups(false);
+    await refreshMemberCounts(false, { render: false, force: true });
   }
 
   async function selectGroup(groupId) {
@@ -4237,6 +4273,8 @@
       appData.selectedGroupId = groupId || '';
       if (groupId) localStorage.setItem(LS.selectedGroup, groupId);
       else localStorage.removeItem(LS.selectedGroup);
+      setupMemberCountsRealtime();
+      await refreshMemberCounts(false, { render: false, force: true });
       renderGroupSwitcher();
       renderHome();
       renderActiveTab();
@@ -4663,6 +4701,112 @@
     renderCheckins();
   }
 
+  async function loadMemberCounts(showError = false, { render = true, force = false } = {}) {
+    const now = Date.now();
+    if (!force && lastMemberCountsRefreshAt && now - lastMemberCountsRefreshAt < MEMBER_COUNTS_MIN_REFRESH_MS) {
+      if (render) renderHome();
+      return appData.memberCounts;
+    }
+    if (memberCountsRefreshPromise) return memberCountsRefreshPromise;
+
+    memberCountsRefreshPromise = (async () => {
+      try {
+        if (!isSupabaseReady()) {
+          syncMemberCountsFromState();
+          return appData.memberCounts;
+        }
+
+        const [membersResponse, membershipsResponse] = await Promise.all([
+          supabaseClient.from('members').select('id', { count: 'exact', head: true }),
+          supabaseClient.from('group_memberships').select('group_id,user_id,role')
+        ]);
+
+        if (membersResponse.error || membershipsResponse.error) {
+          const error = membersResponse.error || membershipsResponse.error;
+          console.error('Could not load member counts', error);
+          if (showError) toast(`Could not load member counts: ${error.message}`);
+          syncMemberCountsFromState();
+          return appData.memberCounts;
+        }
+
+        appData.groupMemberships = membershipsResponse.data || [];
+        const byGroup = {};
+        appData.groupMemberships.forEach(membership => {
+          if (!membership || !membership.group_id) return;
+          byGroup[membership.group_id] = (byGroup[membership.group_id] || 0) + 1;
+        });
+        appData.memberCounts = {
+          global: Number(membersResponse.count || 0),
+          byGroup
+        };
+        lastMemberCountsRefreshAt = Date.now();
+        return appData.memberCounts;
+      } catch (err) {
+        console.error('Member count refresh failed', err);
+        if (showError) toast(`Could not refresh member counts: ${err.message}`);
+        syncMemberCountsFromState();
+        return appData.memberCounts;
+      } finally {
+        memberCountsRefreshPromise = null;
+        if (render) renderHome();
+      }
+    })();
+
+    return memberCountsRefreshPromise;
+  }
+
+  const refreshMemberCounts = loadMemberCounts;
+
+  function teardownMemberCountsRealtime() {
+    if (memberCountsChannel && supabaseClient && supabaseClient.removeChannel) {
+      supabaseClient.removeChannel(memberCountsChannel);
+    }
+    memberCountsChannel = null;
+  }
+
+  function setupMemberCountsRealtime() {
+    teardownMemberCountsRealtime();
+    if (!isSupabaseReady() || !supabaseClient.channel) return;
+    try {
+      const channelName = `member-counts:${selectedGroupId() || 'all'}`;
+      memberCountsChannel = supabaseClient
+        .channel(channelName)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, payload => {
+          console.log('[member-counts] members realtime payload', payload.eventType);
+          refreshMemberCounts(false, { force: true });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_memberships' }, payload => {
+          console.log('[member-counts] group_memberships realtime payload', payload.eventType);
+          refreshMemberCounts(false, { force: true });
+        })
+        .subscribe(status => {
+          console.log('[member-counts] realtime status', status);
+          if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) refreshMemberCounts(false);
+        });
+    } catch (err) {
+      console.error('[member-counts] realtime setup failed', err);
+      refreshMemberCounts(false);
+    }
+  }
+
+  function refreshMemberCountsWhenVisible(force = false) {
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    refreshMemberCounts(false, { force });
+  }
+
+  function initMemberCountRefreshers() {
+    setupMemberCountsRealtime();
+    refreshMemberCounts(false, { force: true });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshMemberCountsWhenVisible(true);
+    });
+    window.addEventListener('focus', () => refreshMemberCountsWhenVisible(true));
+    window.addEventListener('pageshow', () => refreshMemberCountsWhenVisible(true));
+    if (!memberCountsPollTimer) {
+      memberCountsPollTimer = window.setInterval(() => refreshMemberCountsWhenVisible(false), MEMBER_COUNTS_POLL_MS);
+    }
+  }
+
   async function loadAllData(showToast = true, throwOnError = false) {
     if (!isSupabaseReady()) seedIfNeeded();
 
@@ -4683,6 +4827,8 @@
     ]);
 
     await createDueMeetReminderNotifications(false);
+    await refreshMemberCounts(false, { render: false, force: true });
+    setupMemberCountsRealtime();
 
     if (isSupabaseReady()) console.log('public garage data loaded');
 
@@ -4881,7 +5027,8 @@
     const upcomingMeets = upcomingMeetsList(allMeets);
 
     // Stats from the app's existing Supabase-backed tables.
-    document.getElementById('stat-members').textContent  = members.length;
+    const memberCount = selectedMemberCount();
+    document.getElementById('stat-members').textContent  = memberCount;
     document.getElementById('stat-meets').textContent    = upcomingMeets.length;
     document.getElementById('stat-photos').textContent   = photos.length;
     document.getElementById('stat-checkins').textContent = checkins.length;
@@ -4900,7 +5047,7 @@
       crewDescriptionEl.classList.toggle('show', !!selectedCrew && !!selectedCrewDescription);
     }
     document.getElementById('home-meta').textContent =
-      `${selectedGroupLabel()} · ${members.length} member profile${members.length !== 1 ? 's' : ''} · ` +
+      `${selectedGroupLabel()} · ${memberCount} member${memberCount !== 1 ? 's' : ''} · ` +
       `${upcomingMeets.length} upcoming meet${upcomingMeets.length !== 1 ? 's' : ''} · ` +
       `${photos.length} photo drop${photos.length !== 1 ? 's' : ''} · ` +
       `${checkins.length} active check-in${checkins.length !== 1 ? 's' : ''}`;
@@ -5186,6 +5333,7 @@
         await addRecord('members', { id: genId(), ...m });
       }
 
+      await refreshMemberCounts(false, { render: false, force: true });
       editingMemberId = myMemberProfile() ? myMemberProfile().id : null;
       renderMembers();
       renderHome();
@@ -7363,6 +7511,7 @@ ${JSON.stringify({
       await loadCurrentSession();
       await loadCurrentUser();
       await loadAllData(true, false);
+      initMemberCountRefreshers();
       setupNotificationsRealtime();
       updateAuthUI();
       renderHome();
