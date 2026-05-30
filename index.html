@@ -547,6 +547,16 @@
       margin-bottom: 10px; position: relative;
     }
     .hero-meta { font-size: 0.78rem; color: var(--text-2); position: relative; }
+    .hero-crew-description {
+      display: none;
+      max-width: 62ch;
+      margin: -2px 0 10px;
+      color: var(--text-2);
+      font-size: clamp(0.9rem, 0.84rem + 0.25vw, 1rem);
+      line-height: 1.5;
+      position: relative;
+    }
+    .hero-crew-description.show { display: block; }
 
     .stats-row {
       display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1354,7 +1364,8 @@
       <div class="hero">
         <!-- RENAME: Update eyebrow text -->
         <div class="hero-eyebrow">🏁 Your CruiseCrew</div>
-        <div class="hero-h1">Welcome<br>Back.</div>
+        <div class="hero-h1" id="home-title">Welcome<br>Back.</div>
+        <div class="hero-crew-description" id="home-crew-description"></div>
         <div class="hero-meta" id="home-meta">Loading crew stats...</div>
       </div>
 
@@ -2014,6 +2025,11 @@
   function selectedGroupLabel() {
     const group = selectedGroup();
     return group ? group.name : 'All CruiseCrew';
+  }
+
+  function selectedGroupDescription() {
+    const group = selectedGroup();
+    return group ? String(group.description || '').trim() : '';
   }
 
   function myGroupMembership(groupId = selectedGroupId()) {
@@ -3495,7 +3511,19 @@
     document.getElementById('stat-photos').textContent   = photos.length;
     document.getElementById('stat-checkins').textContent = checkins.length;
 
-    // Hero meta
+    // Hero crew summary
+    const selectedCrew = selectedGroup();
+    const selectedCrewDescription = selectedGroupDescription();
+    const homeTitle = document.getElementById('home-title');
+    const crewDescriptionEl = document.getElementById('home-crew-description');
+    if (homeTitle) {
+      if (selectedCrew) homeTitle.textContent = selectedCrew.name;
+      else homeTitle.innerHTML = 'Welcome<br>Back.';
+    }
+    if (crewDescriptionEl) {
+      crewDescriptionEl.textContent = selectedCrewDescription;
+      crewDescriptionEl.classList.toggle('show', !!selectedCrew && !!selectedCrewDescription);
+    }
     document.getElementById('home-meta').textContent =
       `${selectedGroupLabel()} · ${members.length} member profile${members.length !== 1 ? 's' : ''} · ` +
       `${upcomingMeets.length} upcoming meet${upcomingMeets.length !== 1 ? 's' : ''} · ` +
