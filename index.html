@@ -142,7 +142,7 @@
       width: min(100%, 1100px);
       margin: 0 auto;
       padding-top: calc(56px + var(--safe-top));
-      padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 10px);
+      padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 34px);
       min-height: 100dvh;
       scroll-padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 96px);
     }
@@ -539,6 +539,34 @@
     .toast.show {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
+    }
+    .update-banner {
+      position: fixed;
+      left: max(16px, env(safe-area-inset-left));
+      right: max(16px, env(safe-area-inset-right));
+      bottom: calc(var(--nav-h) + var(--safe-bot) + 12px);
+      z-index: 610;
+      display: none;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 12px 16px;
+      border: 1px solid var(--accent-border);
+      border-radius: 14px;
+      background: var(--bg-card-alt);
+      color: var(--text);
+      font-size: 0.86rem;
+      font-weight: 700;
+      text-align: center;
+      box-shadow: 0 12px 34px rgba(0,0,0,0.55);
+    }
+    .update-banner.show { display: block; }
+    .app-version-footer {
+      margin-top: 18px;
+      padding: 10px 0 calc(var(--safe-bot) + 8px);
+      color: var(--text-3);
+      font-size: 0.72rem;
+      text-align: center;
+      letter-spacing: 0.02em;
     }
 
     /* ============================================================
@@ -1336,6 +1364,7 @@
 
   <!-- Toast notification (auto-show/hide) -->
   <div class="toast" id="toast"></div>
+  <button class="update-banner" id="update-banner" type="button">New CruiseCrew update available. Tap to refresh.</button>
 
   <!-- ============================================================
        MAIN CONTENT
@@ -1859,6 +1888,8 @@
 
     </section><!-- /announce -->
 
+    <footer class="app-version-footer" id="app-version-footer">CruiseCrew</footer>
+
   </main><!-- /main -->
 
 
@@ -1978,6 +2009,15 @@
   // Admin/owner controls: replace YOUR_EMAIL_HERE with your signed-in Supabase Auth email.
   // Keep this list in sync with the matching admin email list in supabase/schema.sql.
   const ADMIN_EMAILS = ["chancecampbell97@live.com"];
+
+  // App version is manually controlled in /version.json.
+  const VERSION_URL = '/version.json';
+  const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+  const APP_VERSION_STORAGE_KEY = 'cruisecrew_loaded_app_version';
+  const APP_VERSION_PENDING_KEY = 'cruisecrew_pending_refresh_version';
+  let loadedAppVersion = localStorage.getItem(APP_VERSION_STORAGE_KEY) || '';
+  let latestRemoteVersion = '';
+  let updateBannerVisible = false;
 
   // Helper: date string N days from today
   function futureDate(n) {
@@ -6259,6 +6299,126 @@ ${JSON.stringify({
   window.deleteAnn = deleteAnn;
 
 
+
+  // ==============================================================
+  // APP VERSION + UPDATE DETECTION
+  // ==============================================================
+  function normalizeVersionValue(version) {
+    return String(version || '').trim().replace(/^v/i, '');
+  }
+
+  function formatAppVersion(version) {
+    const clean = normalizeVersionValue(version);
+    return clean ? `v${clean}` : '';
+  }
+
+  function setVersionFooter(version) {
+    const el = document.getElementById('app-version-footer');
+    if (el) el.textContent = `CruiseCrew ${formatAppVersion(version) || ''}`.trim();
+  }
+
+  async function fetchRemoteVersion() {
+    const url = `${VERSION_URL}?t=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`version fetch failed (${res.status})`);
+    const data = await res.json();
+    const version = normalizeVersionValue(data.version);
+    console.log('CruiseCrew remote version fetched', version);
+    return version;
+  }
+
+  function showUpdateBanner(version) {
+    if (updateBannerVisible) return;
+    const banner = document.getElementById('update-banner');
+    if (!banner) return;
+    banner.textContent = `New CruiseCrew update available. Tap to refresh.`;
+    banner.classList.add('show');
+    updateBannerVisible = true;
+    console.log('CruiseCrew update banner shown', { loadedAppVersion, remoteVersion: version });
+  }
+
+  async function clearOldAppCaches() {
+    if (!('caches' in window)) return;
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter(key => key.startsWith('cruisecrew-'))
+      .map(key => caches.delete(key).then(deleted => {
+        if (deleted) console.log('CruiseCrew old cache deleted', key);
+      })));
+  }
+
+  async function refreshForUpdate() {
+    console.log('CruiseCrew update refresh requested', { remoteVersion: latestRemoteVersion });
+    try {
+      await clearOldAppCaches();
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(reg => reg.update().catch(err => console.warn('CruiseCrew service worker update request failed', err))));
+      }
+      if (latestRemoteVersion) localStorage.setItem(APP_VERSION_PENDING_KEY, latestRemoteVersion);
+    } catch (err) {
+      console.warn('CruiseCrew update cleanup failed before reload', err);
+    } finally {
+      window.location.reload();
+    }
+  }
+
+  async function checkForAppUpdate({ initial = false } = {}) {
+    try {
+      const remoteVersion = await fetchRemoteVersion();
+      latestRemoteVersion = remoteVersion;
+      const pendingVersion = localStorage.getItem(APP_VERSION_PENDING_KEY) || '';
+      if (!loadedAppVersion || (pendingVersion && pendingVersion === remoteVersion)) {
+        loadedAppVersion = remoteVersion;
+        localStorage.setItem(APP_VERSION_STORAGE_KEY, remoteVersion);
+        localStorage.removeItem(APP_VERSION_PENDING_KEY);
+        console.log('CruiseCrew app version loaded', loadedAppVersion);
+        setVersionFooter(loadedAppVersion);
+        return;
+      }
+      console.log('CruiseCrew app version loaded', loadedAppVersion);
+      setVersionFooter(loadedAppVersion);
+      if (remoteVersion && normalizeVersionValue(remoteVersion) !== normalizeVersionValue(loadedAppVersion)) {
+        console.log('CruiseCrew version mismatch detected', { loadedAppVersion, remoteVersion });
+        showUpdateBanner(remoteVersion);
+      }
+    } catch (err) {
+      console.warn('CruiseCrew version check failed', err);
+      if (initial && loadedAppVersion) setVersionFooter(loadedAppVersion);
+    }
+  }
+
+  function initAppVersionChecks() {
+    setVersionFooter(loadedAppVersion);
+    const banner = document.getElementById('update-banner');
+    if (banner) banner.addEventListener('click', refreshForUpdate);
+    checkForAppUpdate({ initial: true });
+    window.setInterval(() => checkForAppUpdate(), VERSION_CHECK_INTERVAL_MS);
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    window.addEventListener('load', async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+        console.log('CruiseCrew service worker registered', reg.scope);
+        reg.addEventListener('updatefound', () => {
+          console.log('CruiseCrew service worker update found');
+          const worker = reg.installing;
+          if (!worker) return;
+          worker.addEventListener('statechange', () => {
+            if (worker.state === 'activated') console.log('CruiseCrew new service worker activated');
+          });
+        });
+      } catch (err) {
+        console.warn('CruiseCrew service worker registration failed', err);
+      }
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      console.log('CruiseCrew new service worker activated');
+    });
+  }
+
   // ==============================================================
   // 10. UTILITIES
   // ==============================================================
@@ -6310,6 +6470,8 @@ ${JSON.stringify({
   // ==============================================================
   (async function init() {
     console.log('app init started');
+    initAppVersionChecks();
+    registerServiceWorker();
     wireAuth();
     setAuthStatus('loading', 'Checking signed-in user...');
     try {
