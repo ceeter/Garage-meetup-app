@@ -1060,12 +1060,6 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
     }
     .photo-debug.show { display: block; }
-    .photo-build-marker {
-      margin: -4px 0 12px;
-      color: var(--amber);
-      font-size: 0.74rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-    }
     .photo-advanced {
       grid-column: 1 / -1;
       border: 1px solid var(--border);
@@ -1613,8 +1607,6 @@
         <div class="sec-title">Photo <em>Drops</em></div>
         <button class="btn-add" id="toggle-add-photo" title="Drop a Photo" aria-label="Drop a Photo">+</button>
       </div>
-      <div class="photo-build-marker">Photo upload debug build v2</div>
-
       <!-- Add Photo inline form -->
       <div class="inline-form" id="add-photo-form">
         <div class="form-title">Drop a Photo</div>
@@ -1935,6 +1927,8 @@
     garageView:    'cc_garage_view',
     seeded:        'gc_seeded'
   };
+
+  const PHOTO_UPLOAD_DEBUG = false;
 
   const DB = {
     members: {
@@ -4497,8 +4491,9 @@
   function setPhotoDebug(message) {
     const el = document.getElementById('photo-debug');
     if (!el) return;
-    el.textContent = message || '';
-    el.className = `photo-debug${message ? ' show' : ''}`;
+    const debugMessage = PHOTO_UPLOAD_DEBUG ? (message || '') : '';
+    el.textContent = debugMessage;
+    el.className = `photo-debug${debugMessage ? ' show' : ''}`;
   }
 
   function safeDebugValue(value) {
