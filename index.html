@@ -413,6 +413,11 @@
     .auth-signedin { display: none; margin-bottom: 10px; }
     .auth-panel.signed-in .auth-signedin { display: block; }
     .auth-panel.signed-in .auth-fields, .auth-panel.signed-in .auth-tabs, .auth-panel.signed-in #auth-signup-btn, .auth-panel.signed-in #auth-signin-btn, .auth-panel:not(.signed-in) #auth-signout-btn { display: none; }
+    .auth-reset-request, .auth-reset-password { display: none; gap: 10px; }
+    .auth-panel.reset-request .auth-tabs, .auth-panel.reset-request .auth-fields, .auth-panel.reset-request .auth-actions { display: none; }
+    .auth-panel.reset-request .auth-reset-request { display: grid; }
+    .auth-panel.reset-password .auth-tabs, .auth-panel.reset-password .auth-fields, .auth-panel.reset-password .auth-actions, .auth-panel.reset-password .auth-signedin { display: none; }
+    .auth-panel.reset-password .auth-reset-password { display: grid; }
     .auth-tabs {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
       margin-bottom: 12px; padding: 3px; border: 1px solid var(--border); border-radius: 999px;
@@ -1609,8 +1614,28 @@
         </div>
         <div class="auth-actions">
           <button class="btn-primary" id="auth-signin-btn">Sign In</button>
+          <button class="auth-helper-btn" id="auth-forgot-password-btn" type="button">Forgot password?</button>
           <button class="auth-helper-btn" id="auth-signup-btn" type="button">New here? <strong>Create an account</strong></button>
           <button class="btn-cancel" id="auth-signout-btn">Sign Out</button>
+        </div>
+        <div class="auth-reset-request" id="auth-reset-request">
+          <div class="form-grp">
+            <label class="form-lbl" for="auth-reset-email">Email</label>
+            <input type="email" class="form-inp" id="auth-reset-email" autocomplete="email" placeholder="you@example.com">
+          </div>
+          <button class="btn-primary" id="auth-send-reset-btn" type="button">Send reset link</button>
+          <button class="auth-helper-btn" id="auth-back-signin-btn" type="button">Back to <strong>Sign In</strong></button>
+        </div>
+        <div class="auth-reset-password" id="auth-reset-password">
+          <div class="form-grp">
+            <label class="form-lbl" for="auth-new-password">New password</label>
+            <input type="password" class="form-inp" id="auth-new-password" autocomplete="new-password" placeholder="At least 8 characters">
+          </div>
+          <div class="form-grp">
+            <label class="form-lbl" for="auth-confirm-password">Confirm password</label>
+            <input type="password" class="form-inp" id="auth-confirm-password" autocomplete="new-password" placeholder="Repeat new password">
+          </div>
+          <button class="btn-primary" id="auth-update-password-btn" type="button">Update password</button>
         </div>
         <div class="auth-status" id="auth-status" role="status" aria-live="polite"></div>
         <button class="btn-ghost" id="auth-install-app" type="button">Install App</button>
@@ -3112,7 +3137,7 @@
     if (authStatusTimer) clearTimeout(authStatusTimer);
     el.textContent = msg;
     el.className = `auth-status${msg ? ' show' : ''}${type ? ' ' + type : ''}`;
-    if (type === 'success' && msg) {
+    if (type === 'success' && msg && ![RESET_REQUEST_SUCCESS_MESSAGE, 'Password updated. You can now sign in.'].includes(msg)) {
       authStatusTimer = setTimeout(() => {
         el.textContent = '';
         el.className = 'auth-status';
@@ -3121,35 +3146,51 @@
   }
 
   let authMode = 'signin';
+  let passwordRecoveryActive = false;
+  const RESET_REDIRECT_PATH = '/?resetPassword=1';
+  const RESET_REQUEST_SUCCESS_MESSAGE = 'If an account exists for that email, a reset link has been sent.';
+  const RESET_LINK_INVALID_MESSAGE = 'This reset link is invalid or expired. Request a new one.';
 
   function setAuthMode(mode) {
-    authMode = mode === 'signup' ? 'signup' : 'signin';
+    if (mode === 'reset-request') authMode = 'reset-request';
+    else if (mode === 'reset-password') authMode = 'reset-password';
+    else authMode = mode === 'signup' ? 'signup' : 'signin';
     const isSignUp = authMode === 'signup';
+    const isResetRequest = authMode === 'reset-request';
+    const isResetPassword = authMode === 'reset-password';
     const subtitle = document.getElementById('auth-subtitle');
     const signInBtn = document.getElementById('auth-signin-btn');
     const signUpBtn = document.getElementById('auth-signup-btn');
     const password = document.getElementById('auth-password');
+    const panel = document.getElementById('auth-panel');
+    panel.classList.toggle('reset-request', isResetRequest);
+    panel.classList.toggle('reset-password', isResetPassword);
     document.getElementById('auth-mode-signin').classList.toggle('active', !isSignUp);
     document.getElementById('auth-mode-signup').classList.toggle('active', isSignUp);
     document.getElementById('auth-mode-signin').setAttribute('aria-selected', String(!isSignUp));
     document.getElementById('auth-mode-signup').setAttribute('aria-selected', String(isSignUp));
-    subtitle.textContent = isSignUp
-      ? 'Create your account. Email verification may be required before you can sign in.'
-      : 'Sign in to manage your garage, meets, RSVPs, photos, and crew updates.';
+    subtitle.textContent = isResetPassword
+      ? 'Set a new password for your CruiseCrew account.'
+      : isResetRequest
+        ? 'Enter your account email and we’ll send a password reset link.'
+        : isSignUp
+          ? 'Create your account. Email verification may be required before you can sign in.'
+          : 'Sign in to manage your garage, meets, RSVPs, photos, and crew updates.';
     signInBtn.textContent = isSignUp ? 'Create Account' : 'Sign In';
     signUpBtn.innerHTML = isSignUp ? 'Already have an account? <strong>Sign in</strong>' : 'New here? <strong>Create an account</strong>';
     password.autocomplete = isSignUp ? 'new-password' : 'current-password';
   }
 
   function openAuthPanel(mode = 'signin') {
-    if (!currentUserId()) setAuthMode(mode);
+    if (passwordRecoveryActive) mode = 'reset-password';
+    if (!currentUserId() || passwordRecoveryActive) setAuthMode(mode);
     const panel = document.getElementById('auth-panel');
     const trigger = document.getElementById('account-trigger');
     panel.classList.add('open');
     trigger.setAttribute('aria-expanded', 'true');
-    const firstInput = document.getElementById('auth-email');
+    const firstInput = document.getElementById(authMode === 'reset-request' ? 'auth-reset-email' : authMode === 'reset-password' ? 'auth-new-password' : 'auth-email');
     const signOutBtn = document.getElementById('auth-signout-btn');
-    setTimeout(() => (currentUserId() ? signOutBtn : firstInput).focus(), 0);
+    setTimeout(() => (currentUserId() && !passwordRecoveryActive ? signOutBtn : firstInput).focus(), 0);
   }
 
   function promptSignIn(message) {
@@ -3172,7 +3213,7 @@
   }
 
   function setAuthLoading(isLoading) {
-    ['auth-signup-btn','auth-signin-btn','auth-signout-btn','auth-email','auth-password'].forEach(id => {
+    ['auth-signup-btn','auth-signin-btn','auth-signout-btn','auth-email','auth-password','auth-forgot-password-btn','auth-reset-email','auth-send-reset-btn','auth-back-signin-btn','auth-new-password','auth-confirm-password','auth-update-password-btn'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.disabled = isLoading;
     });
@@ -3180,7 +3221,8 @@
 
   function updateAuthUI() {
     const signedIn = !!currentUserId();
-    const isAdmin = currentUserIsAdmin();
+    const authUiSignedIn = signedIn && !passwordRecoveryActive;
+    const isAdmin = !passwordRecoveryActive && currentUserIsAdmin();
     const email = currentUserEmail() || '';
     const panel = document.getElementById('auth-panel');
     const trigger = document.getElementById('account-trigger');
@@ -3202,42 +3244,43 @@
     const authInstallApp = document.getElementById('auth-install-app');
 
     if (authInstallApp) authInstallApp.style.display = isAppStandalone() ? 'none' : '';
-    if (crewSwitcher) crewSwitcher.classList.toggle('show', signedIn);
-    if (notificationBell) notificationBell.classList.toggle('show', signedIn);
+    if (crewSwitcher) crewSwitcher.classList.toggle('show', authUiSignedIn);
+    if (notificationBell) notificationBell.classList.toggle('show', authUiSignedIn);
     if (!signedIn) {
       appData.notifications = [];
       closeNotificationsPanel();
     }
     renderNotifications();
-    panel.classList.toggle('signed-in', signedIn);
-    trigger.classList.toggle('signed-in', signedIn);
-    trigger.textContent = signedIn ? compactEmail(email) : 'Sign In';
-    trigger.title = signedIn ? email : 'Sign in';
-    if (signedIn) subtitle.textContent = 'Manage your signed-in account.';
+    panel.classList.toggle('signed-in', authUiSignedIn);
+    trigger.classList.toggle('signed-in', authUiSignedIn);
+    trigger.textContent = authUiSignedIn ? compactEmail(email) : 'Sign In';
+    trigger.title = authUiSignedIn ? email : 'Sign in';
+    if (passwordRecoveryActive) setAuthMode('reset-password');
+    else if (signedIn) subtitle.textContent = 'Manage your signed-in account.';
     else setAuthMode(authMode);
     emailEl.textContent = signedIn ? email : 'Signed out';
-    signOutBtn.disabled = !signedIn;
-    signInBtn.disabled = signedIn;
-    signUpBtn.disabled = signedIn;
+    signOutBtn.disabled = !signedIn || passwordRecoveryActive;
+    signInBtn.disabled = authUiSignedIn;
+    signUpBtn.disabled = authUiSignedIn;
     addMemberBtn.disabled = false;
-    addMemberBtn.title = signedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
+    addMemberBtn.title = authUiSignedIn ? 'Add or Edit Your Garage Profile' : 'Sign in to add your garage profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
     addMeetBtn.disabled = !isAdmin;
     addMeetBtn.style.display = isAdmin ? '' : 'none';
     addMeetBtn.title = isAdmin ? 'Add Meet' : 'Admin only';
     addMeetBtn.setAttribute('aria-label', addMeetBtn.title);
     saveMeetBtn.disabled = !isAdmin;
-    garageNote.classList.toggle('show', !signedIn);
-    meetNote.textContent = signedIn ? 'Admin only: creating and managing meets is limited to owners.' : 'Sign in as an admin to create a meet.';
+    garageNote.classList.toggle('show', !authUiSignedIn);
+    meetNote.textContent = authUiSignedIn ? 'Admin only: creating and managing meets is limited to owners.' : 'Sign in as an admin to create a meet.';
     meetNote.classList.toggle('show', !isAdmin);
     if (cruiseStartBtn) {
-      cruiseStartBtn.classList.toggle('dimmed', !signedIn);
-      cruiseStartBtn.setAttribute('aria-disabled', String(!signedIn));
-      cruiseStartBtn.title = signedIn ? 'Start a 4-hour check-in' : 'Sign in to start Cruise Mode';
+      cruiseStartBtn.classList.toggle('dimmed', !authUiSignedIn);
+      cruiseStartBtn.setAttribute('aria-disabled', String(!authUiSignedIn));
+      cruiseStartBtn.title = authUiSignedIn ? 'Start a 4-hour check-in' : 'Sign in to start Cruise Mode';
     }
     if (addPhotoBtn) {
       addPhotoBtn.disabled = false;
-      addPhotoBtn.title = signedIn ? 'Drop a Photo' : 'Sign in to drop a photo';
+      addPhotoBtn.title = authUiSignedIn ? 'Drop a Photo' : 'Sign in to drop a photo';
       addPhotoBtn.setAttribute('aria-label', addPhotoBtn.title);
     }
     if (addAnnBtn) {
@@ -3256,7 +3299,7 @@
       clearAnnForm();
     }
 
-    if (!signedIn) {
+    if (!authUiSignedIn) {
       document.getElementById('add-member-form').classList.remove('open');
       document.getElementById('add-meet-form').classList.remove('open');
       document.getElementById('checkin-form').classList.remove('open');
@@ -3335,6 +3378,164 @@
     })();
 
     return authRefreshPromise;
+  }
+
+  function resetRedirectUrl() {
+    return `${window.location.origin}${RESET_REDIRECT_PATH}`;
+  }
+
+  function recoveryUrlParams() {
+    const params = new URLSearchParams(window.location.search || '');
+    const rawHash = (window.location.hash || '').replace(/^#/, '');
+    if (rawHash) {
+      const hashQuery = rawHash.includes('?') ? rawHash.slice(rawHash.indexOf('?') + 1) : rawHash;
+      new URLSearchParams(hashQuery).forEach((value, key) => params.set(key, value));
+    }
+    return params;
+  }
+
+  function hasRecoveryUrl() {
+    const params = recoveryUrlParams();
+    return params.get('resetPassword') === '1'
+      || params.get('type') === 'recovery'
+      || !!params.get('access_token')
+      || !!params.get('refresh_token')
+      || !!params.get('code')
+      || !!params.get('error_description');
+  }
+
+  function clearRecoveryUrl(keepResetFlag = false) {
+    const nextUrl = keepResetFlag ? resetRedirectUrl() : `${window.location.origin}${window.location.pathname}`;
+    window.history.replaceState({}, document.title, nextUrl);
+  }
+
+  async function handlePasswordRecoveryUrl() {
+    if (!hasRecoveryUrl()) return false;
+    console.log('[auth] password recovery URL detected');
+    passwordRecoveryActive = true;
+    openAuthPanel('reset-password');
+    const params = recoveryUrlParams();
+
+    if (params.get('error_description')) {
+      console.warn('[auth] password recovery URL contains an error');
+      clearRecoveryUrl(false);
+      setAuthStatus('error', RESET_LINK_INVALID_MESSAGE);
+      return true;
+    }
+
+    try {
+      if (!isSupabaseReady() || !supabaseClient.auth) throw new Error('Supabase Auth is not configured.');
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const code = params.get('code');
+      if (accessToken && refreshToken) {
+        console.log('[auth] setting recovery session from URL hash');
+        const { data, error } = await supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (error) throw error;
+        appData.currentSession = data.session || null;
+        appData.currentUser = data.user || (data.session && data.session.user) || null;
+      } else if (code) {
+        console.log('[auth] exchanging recovery code for session');
+        const { data, error } = await supabaseClient.auth.exchangeCodeForSession(code);
+        if (error) throw error;
+        appData.currentSession = data.session || null;
+        appData.currentUser = data.user || (data.session && data.session.user) || null;
+      } else {
+        await loadCurrentSession();
+        appData.currentUser = appData.currentSession ? appData.currentSession.user : null;
+      }
+
+      clearRecoveryUrl(true);
+      if (!appData.currentSession) {
+        console.warn('[auth] recovery link did not create a session');
+        setAuthStatus('error', RESET_LINK_INVALID_MESSAGE);
+      } else {
+        setAuthStatus('', 'Enter a new password to finish resetting your account.');
+      }
+    } catch (err) {
+      console.error('[auth] password recovery setup failed', err);
+      clearRecoveryUrl(false);
+      setAuthStatus('error', RESET_LINK_INVALID_MESSAGE);
+    } finally {
+      updateAuthUI();
+    }
+    return true;
+  }
+
+  function openPasswordResetRequest() {
+    passwordRecoveryActive = false;
+    const currentEmail = document.getElementById('auth-email').value.trim();
+    const resetEmail = document.getElementById('auth-reset-email');
+    if (resetEmail && currentEmail) resetEmail.value = currentEmail;
+    openAuthPanel('reset-request');
+    setAuthStatus('', '');
+  }
+
+  async function sendPasswordResetLink() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      setAuthStatus('error', 'Supabase Auth is not configured.');
+      return;
+    }
+    const email = document.getElementById('auth-reset-email').value.trim();
+    if (!email) {
+      setAuthStatus('error', 'Email is required.');
+      return;
+    }
+    try {
+      setAuthLoading(true);
+      setAuthStatus('loading', 'Sending reset link...');
+      console.log('[auth] requesting password reset email');
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: resetRedirectUrl() });
+      if (error) throw error;
+      setAuthStatus('success', RESET_REQUEST_SUCCESS_MESSAGE);
+    } catch (err) {
+      console.error('[auth] reset email request failed', err);
+      setAuthStatus('error', 'Could not send the reset link. Please try again.');
+    } finally {
+      setAuthLoading(false);
+      updateAuthUI();
+    }
+  }
+
+  async function updatePasswordFromRecovery() {
+    if (!isSupabaseReady() || !supabaseClient.auth) {
+      setAuthStatus('error', 'Supabase Auth is not configured.');
+      return;
+    }
+    const newPassword = document.getElementById('auth-new-password').value;
+    const confirmPassword = document.getElementById('auth-confirm-password').value;
+    if (newPassword.length < 8) {
+      setAuthStatus('error', 'Password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setAuthStatus('error', 'Passwords do not match.');
+      return;
+    }
+    try {
+      setAuthLoading(true);
+      setAuthStatus('loading', 'Updating password...');
+      console.log('[auth] updating password from recovery session');
+      const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      document.getElementById('auth-new-password').value = '';
+      document.getElementById('auth-confirm-password').value = '';
+      clearRecoveryUrl(false);
+      passwordRecoveryActive = false;
+      await supabaseClient.auth.signOut().catch(err => console.warn('[auth] sign out after password reset failed', err));
+      resetSignedOutUiState({ closePanel: false });
+      openAuthPanel('signin');
+      setAuthStatus('success', 'Password updated. You can now sign in.');
+    } catch (err) {
+      console.error('[auth] password update failed', err);
+      const message = /session|expired|jwt|token/i.test(err.message || '')
+        ? RESET_LINK_INVALID_MESSAGE
+        : 'Could not update your password. Please try again.';
+      setAuthStatus('error', message);
+    } finally {
+      setAuthLoading(false);
+      updateAuthUI();
+    }
   }
 
   function authCredentials() {
@@ -3427,6 +3628,10 @@
     document.getElementById('auth-mode-signin').addEventListener('click', () => setAuthMode('signin'));
     document.getElementById('auth-mode-signup').addEventListener('click', () => setAuthMode('signup'));
     document.getElementById('auth-signup-btn').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+    document.getElementById('auth-forgot-password-btn').addEventListener('click', openPasswordResetRequest);
+    document.getElementById('auth-back-signin-btn').addEventListener('click', () => { passwordRecoveryActive = false; openAuthPanel('signin'); setAuthStatus('', ''); });
+    document.getElementById('auth-send-reset-btn').addEventListener('click', sendPasswordResetLink);
+    document.getElementById('auth-update-password-btn').addEventListener('click', updatePasswordFromRecovery);
     document.getElementById('auth-signin-btn').addEventListener('click', signIn);
     document.getElementById('auth-signout-btn').addEventListener('click', signOut);
     wireNotifications();
@@ -3440,8 +3645,17 @@
     if (authStateUnsubscribe) return;
 
     const { data } = supabaseClient.auth.onAuthStateChange((event, session) => {
-      if (!['SIGNED_IN','SIGNED_OUT','TOKEN_REFRESHED'].includes(event)) return;
+      if (!['SIGNED_IN','SIGNED_OUT','TOKEN_REFRESHED','PASSWORD_RECOVERY'].includes(event)) return;
       console.log('[auth] event', event, session && session.user ? session.user.email : null);
+
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryActive = true;
+        appData.currentSession = session || null;
+        appData.currentUser = session && session.user ? session.user : null;
+        openAuthPanel('reset-password');
+        setAuthStatus('', 'Enter a new password to finish resetting your account.');
+        return;
+      }
 
       const authKey = `${event}:${session && session.user ? session.user.id : 'signed-out'}`;
       if (authKey === lastHandledAuthKey) return;
@@ -3457,6 +3671,7 @@
       appData.currentUser = session.user;
       updateAuthUI();
 
+      if (passwordRecoveryActive) return;
       if (event === 'TOKEN_REFRESHED') return;
 
       setTimeout(() => {
@@ -7142,7 +7357,9 @@ ${JSON.stringify({
     updateInstallPrompt();
     wireAuth();
     setAuthStatus('loading', 'Checking signed-in user...');
+    let handlingPasswordRecovery = false;
     try {
+      handlingPasswordRecovery = await handlePasswordRecoveryUrl();
       await loadCurrentSession();
       await loadCurrentUser();
       await loadAllData(true, false);
@@ -7150,8 +7367,10 @@ ${JSON.stringify({
       updateAuthUI();
       renderHome();
       renderActiveTab();
-      setAuthStatus(currentUserId() ? 'success' : '', currentUserId() ? 'Signed in.' : 'Sign in to manage your garage profile.');
-      handleInviteFromUrl();
+      if (!handlingPasswordRecovery) {
+        setAuthStatus(currentUserId() ? 'success' : '', currentUserId() ? 'Signed in.' : 'Sign in to manage your garage profile.');
+        handleInviteFromUrl();
+      }
     } catch (err) {
       console.error('refresh failed', err);
       updateAuthUI();
