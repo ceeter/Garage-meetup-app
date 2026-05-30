@@ -4733,8 +4733,9 @@
       return;
     }
     if (mine) {
-      toast('You already have an active check-in. Check out first to switch meets.');
-      return;
+      console.log('Cruise Mode check-in start: switching active meet check-in via upsert', { meetId, previousCheckinId: mine.id });
+    } else {
+      console.log('Cruise Mode check-in start: creating meet check-in via upsert', { meetId });
     }
 
     const coords = validMapCoordinates(meet.latitude, meet.longitude);
@@ -4748,14 +4749,13 @@
       placeId: meet.place_id || meet.placeId || null
     });
     try {
-      const { error } = await supabaseClient.from('check_ins').insert([payload]);
-      if (error) throw error;
+      await upsertCheckin(payload, 'meet check-in');
       await refreshCheckins(false);
       renderMeets();
       renderHome();
-      toast("📍 You're checked in!");
+      toast(mine ? "📍 Check-in switched to this meet!" : "📍 You're checked in!");
     } catch (err) {
-      console.error('Could not save meet check-in', err);
+      console.error('Cruise Mode check-in error: could not save meet check-in', err);
       toast(`Could not save check-in: ${err.message}`);
     }
   }
@@ -5238,8 +5238,24 @@
       geocode_provider: geocodeProvider || null,
       place_id: placeId || null,
       expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-      ended_at: null
+      ended_at: null,
+      updated_at: new Date().toISOString()
     };
+  }
+
+  async function upsertCheckin(payload, context = 'Cruise Mode') {
+    console.log('Cruise Mode check-in start: upserting check_in row', { context, userId: payload.user_id, meetId: payload.meet_id || null });
+    const { data, error } = await supabaseClient
+      .from('check_ins')
+      .upsert(payload, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (error) {
+      console.error('Cruise Mode check-in error: upsert failed', { context, error });
+      throw error;
+    }
+    console.log('Cruise Mode check-in upsert success', { context, checkInId: data && data.id, userId: payload.user_id });
+    return data;
   }
 
   async function saveCheckin() {
@@ -5266,20 +5282,14 @@
       setCheckinSaving(true);
       setCheckinStatus('loading', existing ? 'Updating your cruise spot...' : 'Sharing your cruise spot for 4 hours...');
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      if (existing) {
-        const { error } = await supabaseClient.from('check_ins').update(payload).eq('id', existing.id).eq('user_id', currentUserId());
-        if (error) throw error;
-      } else {
-        const { error } = await supabaseClient.from('check_ins').insert([payload]);
-        if (error) throw error;
-      }
+      await upsertCheckin(payload, existing ? 'Cruise Mode spot update' : 'Cruise Mode start');
       closeCheckinForm();
       await refreshCheckins(false);
       renderMeets();
       renderHome();
       toast(existing ? '📍 Cruise spot updated for 4 hours' : '📍 Cruise Mode active for 4 hours');
     } catch (err) {
-      console.error('Could not start check-in', err);
+      console.error('Cruise Mode check-in error: could not start check-in', err);
       setCheckinStatus('error', `Could not start check-in: ${err.message}`);
     } finally {
       setCheckinSaving(false);
@@ -5300,14 +5310,22 @@
     try {
       setCheckinSaving(true);
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      const { error } = await supabaseClient.rpc('stop_my_check_in');
+      console.log('Cruise Mode stop sharing: ending current check-in', { checkInId: mine.id, userId: currentUserId() });
+      const stoppedAt = new Date().toISOString();
+      const { error } = await supabaseClient
+        .from('check_ins')
+        .update({ ended_at: stoppedAt, expires_at: stoppedAt, updated_at: stoppedAt })
+        .eq('user_id', currentUserId());
       if (error) throw error;
+      console.log('Cruise Mode stop sharing success', { checkInId: mine.id, userId: currentUserId() });
+      appData.checkins = (appData.checkins || []).filter(c => c.user_id !== currentUserId());
+      renderCheckins();
       await refreshCheckins(false);
       renderMeets();
       renderHome();
       toast('⏹ Cruise spot sharing stopped');
     } catch (err) {
-      console.error('Could not stop check-in', err);
+      console.error('Cruise Mode stop sharing error: could not stop check-in', err);
       toast(`Could not stop sharing: ${err.message}`);
     } finally {
       setCheckinSaving(false);
