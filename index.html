@@ -623,6 +623,7 @@
       border-radius: var(--r);
       overflow: hidden; margin-bottom: 12px;
       transition: border-color 0.2s;
+      cursor: pointer;
     }
     .member-card:hover { border-color: var(--border2); }
     .member-hdr {
@@ -2190,28 +2191,46 @@
     return member ? cleanDisplayName([member.year, member.make, member.model].filter(Boolean).join(' '), '') : '';
   }
 
+  function profileUserIsReferenced(userId) {
+    if (!userId) return false;
+    return (appData.members || []).some(m => m.user_id === userId)
+      || (appData.rsvps || []).some(r => r.user_id === userId)
+      || (appData.checkins || []).some(c => c.user_id === userId)
+      || (appData.photos || []).some(p => p.user_id === userId)
+      || (appData.groupMemberships || []).some(m => m.user_id === userId);
+  }
+
   function userCanViewProfile(userId) {
     if (!userId) return false;
     const gid = selectedGroupId();
-    return !gid || groupMembershipUserIds(gid).has(userId) || userId === currentUserId();
+    if (!gid) return profileUserIsReferenced(userId) || userId === currentUserId();
+    return groupMembershipUserIds(gid).has(userId)
+      || userId === currentUserId()
+      || scopedPhotos().some(p => p.user_id === userId)
+      || scopedCheckins().some(c => c.user_id === userId)
+      || scopedMeets().some(meet => (appData.rsvps || []).some(r => r.meet_id === meet.id && r.user_id === userId));
   }
 
-  function openMemberProfile(userId) {
-    if (!userCanViewProfile(userId)) {
-      toast('That profile is not visible in this crew.');
-      return;
-    }
-    const modal = document.getElementById('member-profile-modal');
-    const card = document.getElementById('member-profile-card');
-    if (!modal || !card) return;
-    const member = memberForUser(userId);
+  async function loadMemberProfileForUser(userId) {
+    let member = memberForUser(userId);
+    if (member || !userId || !isSupabaseReady()) return member || null;
+    const { data, error } = await supabaseClient
+      .from('members')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? upsertLocalMemberProfile(normalize('members', data)) : null;
+  }
+
+  function renderMemberProfileCard(card, member, userId = '') {
     const displayName = cleanDisplayName(member && member.name, 'CruiseCrew member');
     const vehicle = vehicleLabelForMember(member);
     const recentPhotos = scopedPhotos()
-      .filter(photo => photo && photo.user_id === userId)
+      .filter(photo => photo && ((userId && photo.user_id === userId) || (member && photo.member_id === member.id)))
       .sort((a, b) => activityDate(b, b.date) - activityDate(a, a.date))
       .slice(0, 3);
-    const canEdit = !!currentUserId() && userId === currentUserId() && !!member;
+    const canEdit = !!currentUserId() && !!userId && userId === currentUserId() && !!member;
     card.innerHTML = `
       <div class="profile-head">
         <div class="avatar">${esc(initials(displayName))}</div>
@@ -2237,14 +2256,45 @@
       </div>
       ${canEdit ? '<div class="profile-section"><button class="btn-primary" type="button" onclick="closeMemberProfile(); editMember(\'' + member.id + '\')">Edit My Garage Profile</button></div>' : ''}
     `;
+  }
+
+  async function openMemberProfile(userId) {
+    if (!userCanViewProfile(userId)) {
+      toast('That profile is not visible in this crew.');
+      return;
+    }
+    const modal = document.getElementById('member-profile-modal');
+    const card = document.getElementById('member-profile-card');
+    if (!modal || !card) return;
     modal.classList.add('open');
+    card.innerHTML = `<div class="profile-head"><div class="avatar">CC</div><div class="profile-head-main"><div class="profile-name">CruiseCrew member</div><div class="profile-muted">Loading garage profile...</div></div><button class="auth-close profile-close" type="button" onclick="closeMemberProfile()" aria-label="Close member profile">×</button></div>`;
+    try {
+      const member = await loadMemberProfileForUser(userId);
+      renderMemberProfileCard(card, member, userId);
+    } catch (err) {
+      console.error('Could not load member garage profile', err);
+      renderMemberProfileCard(card, memberForUser(userId), userId);
+      toast(`Could not refresh garage profile: ${err.message}`);
+    }
   }
   window.openMemberProfile = openMemberProfile;
 
-  function openMemberProfileByMemberId(memberId) {
+  function openGarageProfile(memberId) {
     const member = (appData.members || []).find(m => m.id === memberId);
-    if (member && member.user_id) openMemberProfile(member.user_id);
-    else toast('No garage profile yet.');
+    if (!member) { toast('No garage profile yet.'); return; }
+    if (member.user_id) openMemberProfile(member.user_id);
+    else {
+      const modal = document.getElementById('member-profile-modal');
+      const card = document.getElementById('member-profile-card');
+      if (!modal || !card) return;
+      renderMemberProfileCard(card, member, '');
+      modal.classList.add('open');
+    }
+  }
+  window.openGarageProfile = openGarageProfile;
+
+  function openMemberProfileByMemberId(memberId) {
+    openGarageProfile(memberId);
   }
   window.openMemberProfileByMemberId = openMemberProfileByMemberId;
 
@@ -2257,7 +2307,7 @@
   function memberProfileButton(userId, label, className = 'member-link') {
     const text = cleanDisplayName(label, 'CruiseCrew member');
     if (!userCanViewProfile(userId)) return esc(text);
-    return `<button class="${esc(className)}" type="button" onclick="openMemberProfile('${esc(userId)}')">${esc(text)}</button>`;
+    return `<button class="${esc(className)}" type="button" onclick="event.stopPropagation(); openMemberProfile('${esc(userId)}')">${esc(text)}</button>`;
   }
 
   document.getElementById('member-profile-modal').addEventListener('click', event => {
@@ -3780,7 +3830,7 @@
     }
 
     el.innerHTML = members.map(m => `
-      <div class="member-card">
+      <div class="member-card" onclick="openGarageProfile('${esc(m.id)}')">
         <div class="member-hdr">
           <div class="avatar">${initials(m.name)}</div>
           <div>
@@ -3797,8 +3847,8 @@
           </div>` : ''}
         </div>
         ${uid && m.user_id === uid ? `<div class="member-ftr">
-          <button class="btn-ghost" onclick="editMember('${m.id}')">✎ Edit</button>
-          <button class="btn-del" onclick="deleteMember('${m.id}')">🗑 Remove</button>
+          <button class="btn-ghost" onclick="event.stopPropagation(); editMember('${m.id}')">✎ Edit</button>
+          <button class="btn-del" onclick="event.stopPropagation(); deleteMember('${m.id}')">🗑 Remove</button>
         </div>` : ''}
       </div>`).join('');
   }
