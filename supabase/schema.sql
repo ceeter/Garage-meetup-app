@@ -406,6 +406,10 @@ begin
     raise exception 'Sign in required to manage crew members';
   end if;
 
+  if target_user_id = auth.uid() then
+    raise exception 'Use Leave Crew to remove yourself';
+  end if;
+
   select * into target_group
   from public.groups
   where id = target_group_id;
@@ -440,6 +444,64 @@ $$;
 
 grant execute on function public.update_group_member_role(uuid, uuid, text) to authenticated;
 grant execute on function public.remove_group_member(uuid, uuid) to authenticated;
+
+
+create or replace function public.can_leave_group(target_group_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select auth.uid() is not null
+    and exists (
+      select 1
+      from public.group_memberships own_membership
+      where own_membership.group_id = target_group_id
+        and own_membership.user_id = auth.uid()
+    )
+    and not (
+      exists (
+        select 1
+        from public.group_memberships own_admin_membership
+        join public.groups own_group on own_group.id = own_admin_membership.group_id
+        where own_admin_membership.group_id = target_group_id
+          and own_admin_membership.user_id = auth.uid()
+          and (own_admin_membership.role in ('owner', 'admin') or own_admin_membership.user_id = own_group.owner_id)
+      )
+      and (
+        select count(*) = 1
+        from public.group_memberships admin_membership
+        join public.groups g on g.id = admin_membership.group_id
+        where admin_membership.group_id = target_group_id
+          and (admin_membership.role in ('owner', 'admin') or admin_membership.user_id = g.owner_id)
+      )
+    );
+$$;
+
+create or replace function public.leave_group(target_group_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required to leave this crew';
+  end if;
+
+  if not public.can_leave_group(target_group_id) then
+    raise exception 'Transfer ownership before leaving this crew.';
+  end if;
+
+  delete from public.group_memberships
+  where group_id = target_group_id
+    and user_id = auth.uid();
+end;
+$$;
+
+grant execute on function public.can_leave_group(uuid) to authenticated;
+grant execute on function public.leave_group(uuid) to authenticated;
 
 alter table public.groups enable row level security;
 alter table public.group_memberships enable row level security;
@@ -482,7 +544,10 @@ create policy "members can read group memberships" on public.group_memberships
 create policy "users can join groups as self" on public.group_memberships
   for insert to authenticated with check (auth.uid() = user_id and role = 'member');
 create policy "users can leave own group membership" on public.group_memberships
-  for delete to authenticated using (auth.uid() = user_id or public.is_admin_user());
+  for delete to authenticated using (
+    public.is_admin_user()
+    or (auth.uid() = user_id and public.can_leave_group(group_id))
+  );
 create policy "group owners and admins can manage memberships" on public.group_memberships
   for update to authenticated using (
     public.is_group_admin(group_id) or public.is_admin_user()
