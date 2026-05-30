@@ -462,10 +462,28 @@
     .crew-settings-status { min-height: 20px; font-size: 0.8rem; color: var(--text-2); }
     .crew-settings-status.error { color: var(--red); }
     .crew-settings-status.success { color: var(--green); }
+    .member-link { color: var(--text); font: inherit; font-weight: inherit; text-align: left; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; min-height: 34px; padding: 0; }
+    .member-link:hover, .member-link:focus-visible { color: var(--accent-hi); text-decoration-color: var(--accent-hi); outline: none; }
+    .profile-modal { position: fixed; inset: 0; z-index: 650; display: none; align-items: flex-end; justify-content: center; padding: 16px; background: rgba(0,0,0,0.68); }
+    .profile-modal.open { display: flex; }
+    .profile-card { width: min(100%, 500px); max-height: min(86dvh, 760px); overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg-card); border: 1px solid var(--border2); border-radius: 20px 20px 14px 14px; padding: 16px; box-shadow: 0 18px 52px rgba(0,0,0,0.58); }
+    .profile-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .profile-head-main { flex: 1; min-width: 0; }
+    .profile-name { font-family: var(--f-display); font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.05; }
+    .profile-car { color: var(--accent-hi); font-weight: 600; margin-top: 3px; }
+    .profile-close { flex-shrink: 0; }
+    .profile-section { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+    .profile-section-title { color: var(--text-3); font-family: var(--f-display); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 7px; }
+    .profile-muted { color: var(--text-3); font-size: 0.84rem; }
+    .profile-handles, .profile-photo-list { display: grid; gap: 8px; }
+    .profile-photo-item { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: center; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px; background: rgba(255,255,255,0.03); }
+    .profile-photo-item img, .profile-photo-fallback { width: 62px; height: 50px; object-fit: cover; border-radius: 8px; background: var(--bg-input); display: flex; align-items: center; justify-content: center; }
+    .profile-photo-title { font-weight: 700; color: var(--text-2); font-size: 0.82rem; }
+    .profile-photo-meta { color: var(--text-3); font-size: 0.74rem; margin-top: 2px; }
     .invite-code-box { background: rgba(255,255,255,0.04); border: 1px dashed var(--accent-border); border-radius: var(--r-sm); padding: 12px; }
     .invite-code-label { color: var(--text-3); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
     .invite-code-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 1rem; color: var(--accent-hi); user-select: all; }
-    @media (min-width: 600px) { .crew-modal { align-items: center; } }
+    @media (min-width: 600px) { .crew-modal, .profile-modal { align-items: center; } .profile-card { border-radius: 20px; } }
     .garage-view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
     .garage-view-toggle .btn-ghost.active { border-color: var(--accent); color: var(--accent); background: var(--accent-lo); }
     @media (min-width: 600px) {
@@ -1674,6 +1692,10 @@
       </div>
     </div>
 
+    <div class="profile-modal" id="member-profile-modal" role="dialog" aria-modal="true" aria-label="Member garage profile">
+      <div class="profile-card" id="member-profile-card"></div>
+    </div>
+
 
     <!-- ======================================================
          ANNOUNCEMENTS TAB
@@ -2063,7 +2085,6 @@
   function memberDisplayName(userId) {
     const profile = (appData.members || []).find(m => m.user_id === userId);
     if (profile && profile.name) return profile.name;
-    if (userId === currentUserId() && currentUserEmail()) return currentUserEmail();
     return 'CruiseCrew member';
   }
 
@@ -2160,6 +2181,88 @@
     const member = row && row.user_id ? appData.members.find(m => m.user_id === row.user_id) : null;
     return cleanDisplayName(member && member.name, fallback);
   }
+
+  function memberForUser(userId) {
+    return userId ? appData.members.find(member => member.user_id === userId) : null;
+  }
+
+  function vehicleLabelForMember(member) {
+    return member ? cleanDisplayName([member.year, member.make, member.model].filter(Boolean).join(' '), '') : '';
+  }
+
+  function userCanViewProfile(userId) {
+    if (!userId) return false;
+    const gid = selectedGroupId();
+    return !gid || groupMembershipUserIds(gid).has(userId) || userId === currentUserId();
+  }
+
+  function openMemberProfile(userId) {
+    if (!userCanViewProfile(userId)) {
+      toast('That profile is not visible in this crew.');
+      return;
+    }
+    const modal = document.getElementById('member-profile-modal');
+    const card = document.getElementById('member-profile-card');
+    if (!modal || !card) return;
+    const member = memberForUser(userId);
+    const displayName = cleanDisplayName(member && member.name, 'CruiseCrew member');
+    const vehicle = vehicleLabelForMember(member);
+    const recentPhotos = scopedPhotos()
+      .filter(photo => photo && photo.user_id === userId)
+      .sort((a, b) => activityDate(b, b.date) - activityDate(a, a.date))
+      .slice(0, 3);
+    const canEdit = !!currentUserId() && userId === currentUserId() && !!member;
+    card.innerHTML = `
+      <div class="profile-head">
+        <div class="avatar">${esc(initials(displayName))}</div>
+        <div class="profile-head-main">
+          <div class="profile-name">${esc(displayName)}</div>
+          ${vehicle ? `<div class="profile-car">${esc(vehicle)}</div>` : '<div class="profile-muted">No car info yet</div>'}
+        </div>
+        <button class="auth-close profile-close" type="button" onclick="closeMemberProfile()" aria-label="Close member profile">×</button>
+      </div>
+      <div class="profile-section">
+        <div class="profile-section-title">Garage Profile</div>
+        ${member ? `
+          ${member.mods ? `<div class="micro-lbl">Mods</div><div class="mods-txt">${esc(member.mods)}</div>` : '<div class="profile-muted">No garage profile details yet</div>'}
+          ${(member.ig || member.tt) ? `<div class="profile-handles handles" style="margin-top:10px">${member.ig ? `<div class="handle-tag">IG ${esc(member.ig)}</div>` : ''}${member.tt ? `<div class="handle-tag">TT ${esc(member.tt)}</div>` : ''}</div>` : ''}
+        ` : '<div class="profile-muted">No garage profile yet</div>'}
+      </div>
+      <div class="profile-section">
+        <div class="profile-section-title">Recent Photo Drops</div>
+        ${recentPhotos.length ? `<div class="profile-photo-list">${recentPhotos.map(photo => {
+          const thumb = photo.image_url ? `<img src="${esc(photo.image_url)}" alt="${esc(photoCaption(photo) || photoDropContext(photo))}" loading="lazy">` : '<div class="profile-photo-fallback">📸</div>';
+          return `<div class="profile-photo-item">${thumb}<div><div class="profile-photo-title">${esc(photoCaption(photo) || photoDropContext(photo))}</div><div class="profile-photo-meta">${esc(formatActivityTime(activityDate(photo, photo.date)))}</div></div></div>`;
+        }).join('')}</div>` : '<div class="profile-muted">No recent photo drops in this crew yet</div>'}
+      </div>
+      ${canEdit ? '<div class="profile-section"><button class="btn-primary" type="button" onclick="closeMemberProfile(); editMember(\'' + member.id + '\')">Edit My Garage Profile</button></div>' : ''}
+    `;
+    modal.classList.add('open');
+  }
+  window.openMemberProfile = openMemberProfile;
+
+  function openMemberProfileByMemberId(memberId) {
+    const member = (appData.members || []).find(m => m.id === memberId);
+    if (member && member.user_id) openMemberProfile(member.user_id);
+    else toast('No garage profile yet.');
+  }
+  window.openMemberProfileByMemberId = openMemberProfileByMemberId;
+
+  function closeMemberProfile() {
+    const modal = document.getElementById('member-profile-modal');
+    if (modal) modal.classList.remove('open');
+  }
+  window.closeMemberProfile = closeMemberProfile;
+
+  function memberProfileButton(userId, label, className = 'member-link') {
+    const text = cleanDisplayName(label, 'CruiseCrew member');
+    if (!userCanViewProfile(userId)) return esc(text);
+    return `<button class="${esc(className)}" type="button" onclick="openMemberProfile('${esc(userId)}')">${esc(text)}</button>`;
+  }
+
+  document.getElementById('member-profile-modal').addEventListener('click', event => {
+    if (event.target.id === 'member-profile-modal') closeMemberProfile();
+  });
 
   function checkinPlaceText(checkin, meetTitles) {
     const meetTitle = checkin && checkin.meet_id && meetTitles[checkin.meet_id];
@@ -2898,8 +3001,8 @@
       return `<div class="crew-member-item" data-user-id="${esc(m.user_id)}">
         <div class="crew-settings-row">
           <div class="crew-member-main">
-            <div class="crew-member-name">${esc(memberDisplayName(m.user_id))}${isSelf ? ' <span style="color:var(--text-3);font-weight:500">(you)</span>' : ''}</div>
-            <div class="crew-member-meta">${esc(joined)} · ${esc(String(m.user_id || '').slice(0, 8))}</div>
+            <div class="crew-member-name">${memberProfileButton(m.user_id, memberDisplayName(m.user_id))}${isSelf ? ' <span style="color:var(--text-3);font-weight:500">(you)</span>' : ''}</div>
+            <div class="crew-member-meta">${esc(joined)}</div>
           </div>
           <span class="crew-role-pill">${esc(role)}</span>
         </div>
@@ -3681,7 +3784,7 @@
         <div class="member-hdr">
           <div class="avatar">${initials(m.name)}</div>
           <div>
-            <div class="member-name">${esc(m.name)}</div>
+            <div class="member-name">${m.user_id ? memberProfileButton(m.user_id, m.name) : esc(m.name || 'CruiseCrew member')}</div>
             <div class="member-car">${esc(m.year)} ${esc(m.make)} ${esc(m.model)}</div>
           </div>
         </div>
@@ -3895,10 +3998,6 @@
     return !!uid && !!meetOwnerId(meet) && meetOwnerId(meet) === uid;
   }
 
-  function memberForUser(userId) {
-    return userId ? appData.members.find(member => member.user_id === userId) : null;
-  }
-
   function vehicleLabelForPerson(row) {
     const member = row && memberForUser(row.user_id);
     const fromProfile = member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : '';
@@ -3913,14 +4012,14 @@
   function meetRsvpRoster(meetId, status) {
     return (appData.rsvps || [])
       .filter(row => row && row.meet_id === meetId && normalizeRsvpStatus(row.status) === status)
-      .map(row => ({ name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
+      .map(row => ({ userId: row.user_id || '', name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   function meetCheckedInRoster(meetId) {
     return globalActiveCheckins()
       .filter(row => row && row.meet_id === meetId)
-      .map(row => ({ name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
+      .map(row => ({ userId: row.user_id || '', name: rosterDisplayName(row), car: vehicleLabelForPerson(row) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -3930,7 +4029,7 @@
       <div class="roster-person">
         <div class="roster-avatar">${esc(initials(person.name))}</div>
         <div>
-          <div class="roster-name">${esc(person.name)}</div>
+          <div class="roster-name">${memberProfileButton(person.userId, person.name)}</div>
           ${person.car ? `<div class="roster-car">${esc(person.car)}</div>` : ''}
         </div>
       </div>`).join('')}</div>`;
@@ -4368,7 +4467,7 @@
       return `<div class="ci-item">
         <div class="ci-av">${esc(initials(c.display_name))}</div>
         <div class="ci-main">
-          <div class="ci-name">${esc(c.display_name || 'CruiseCrew Member')}</div>
+          <div class="ci-name">${memberProfileButton(c.user_id, c.display_name || 'CruiseCrew member')}</div>
           <div class="ci-car">${esc(c.car_label || 'Garage profile pending')}</div>
           <div class="ci-loc">📍 ${esc(c.location_text)}</div>
           ${c.note ? `<div class="ci-note">${esc(c.note)}</div>` : ''}
@@ -4524,6 +4623,11 @@
     return cleanDisplayName(member && member.name, cleanDisplayName(photo && photo.display_name, 'CruiseCrew member'));
   }
 
+  function photoProfileUserId(photo) {
+    const member = photoMember(photo);
+    return (member && member.user_id) || (photo && photo.user_id) || '';
+  }
+
   function photoVehicleInfo(photo) {
     const member = photoMember(photo);
     const profileVehicle = member ? [member.year, member.make, member.model].filter(Boolean).join(' ') : '';
@@ -4570,7 +4674,7 @@
             ${caption ? `<div class="photo-cap">${esc(caption)}</div>` : ''}
             <div class="photo-meta">
               <div class="photo-meta-main">
-                <div class="photo-author">${esc(photoPosterName(p))}</div>
+                <div class="photo-author">${memberProfileButton(photoProfileUserId(p), photoPosterName(p))}</div>
                 ${vehicle ? `<div class="photo-car">${esc(vehicle)}</div>` : ''}
                 <div>${esc(formatActivityTime(postedAt))}</div>
               </div>
