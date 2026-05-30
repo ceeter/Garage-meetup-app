@@ -5310,15 +5310,20 @@
     try {
       setCheckinSaving(true);
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      console.log('Cruise Mode stop sharing: ending current check-in', { checkInId: mine.id, userId: currentUserId() });
-      const stoppedAt = new Date().toISOString();
-      const { error } = await supabaseClient
+      const { data: authData, error: authError } = await supabaseClient.auth.getUser();
+      if (authError) throw authError;
+      const authUserId = authData && authData.user && authData.user.id;
+      console.log('Cruise Mode stop sharing: current auth user', { authUserId, cachedUserId: currentUserId(), checkInId: mine.id });
+      if (!authUserId) throw new Error('No authenticated user found.');
+
+      const { data, error } = await supabaseClient
         .from('check_ins')
-        .update({ ended_at: stoppedAt, expires_at: stoppedAt, updated_at: stoppedAt })
-        .eq('user_id', currentUserId());
+        .delete()
+        .eq('user_id', authUserId)
+        .select('id,user_id');
+      console.log('Cruise Mode stop sharing: delete result', { authUserId, data, error });
       if (error) throw error;
-      console.log('Cruise Mode stop sharing success', { checkInId: mine.id, userId: currentUserId() });
-      appData.checkins = (appData.checkins || []).filter(c => c.user_id !== currentUserId());
+      appData.checkins = (appData.checkins || []).filter(c => c.user_id !== authUserId);
       renderCheckins();
       await refreshCheckins(false);
       renderMeets();
