@@ -4374,7 +4374,7 @@
   // ==============================================================
 
   function sortedMeetsForSelect() {
-    return [...scopedMeets()].sort((a, b) => {
+    return [...globalMeets()].sort((a, b) => {
       const aTime = meetStartsAt(a) || new Date(0);
       const bTime = meetStartsAt(b) || new Date(0);
       return bTime - aTime;
@@ -4429,7 +4429,7 @@
     const select = document.getElementById('ph-meet');
     if (!select) return;
     const meets = sortedMeetsForSelect();
-    select.innerHTML = `<option value="">General Photo Drop</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`;
+    select.innerHTML = `<option value="">No meet / Photo Drop</option>${meets.map(m => `<option value="${esc(m.id)}">${esc(m.title)} · ${esc(fmtDate(m.date))}</option>`).join('')}`;
     select.disabled = false;
   }
 
@@ -4760,7 +4760,7 @@ ${JSON.stringify({
       const caption = document.getElementById('ph-cap').value.trim();
       const meet = meetId ? appData.meets.find(m => m.id === meetId) : null;
       if (meetId && !meet) { phase = 'validate'; throw new Error('Choose a valid meet for this photo.'); }
-      selectedCrewIdForDebug = (meet && meet.group_id) || selectedCrewIdForDebug;
+      selectedCrewIdForDebug = selectedGroupId() || null;
 
       let imageUrl = pastedUrl;
       let storagePath = null;
@@ -4797,7 +4797,7 @@ ${JSON.stringify({
       const member = myMemberProfile();
       const photo = {
         id: genId(),
-        group_id: (meet && meet.group_id) || selectedGroupId() || null,
+        group_id: selectedGroupId() || null,
         meet_id: meetId,
         user_id: user.id,
         member_id: member ? member.id : null,
