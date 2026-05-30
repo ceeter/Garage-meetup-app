@@ -720,6 +720,15 @@
       font-size: 0.8rem; color: var(--text-2);
       display: flex; align-items: center; gap: 5px; margin-bottom: 10px;
     }
+    .map-link {
+      color: var(--accent); cursor: pointer; text-decoration: underline;
+      text-decoration-color: rgba(232,68,26,0.45); text-underline-offset: 3px;
+    }
+    button.map-link {
+      display: inline-flex; align-items: center; gap: 5px; padding: 0;
+      border: 0; background: transparent; font: inherit; text-align: left;
+    }
+    .map-link:hover, .map-link:focus-visible { color: var(--accent-hi); text-decoration-color: currentColor; }
     .meet-desc {
       font-size: 0.83rem; color: var(--text-2);
       line-height: 1.55; margin-bottom: 13px;
@@ -2380,6 +2389,50 @@
     return cleanDisplayName(meet && (meet.location_label || meet.locationLabel), meet && meet.location || 'No location label');
   }
 
+  function mapLocationText(locationData) {
+    if (!locationData) return '';
+    return cleanDisplayName(
+      locationData.geocoded_address || locationData.geocodedAddress ||
+      locationData.location_label || locationData.locationLabel ||
+      locationData.location_text || locationData.locationText ||
+      locationData.location || locationData.address ||
+      locationData.spot_label || locationData.spotLabel,
+      ''
+    );
+  }
+
+  function openMapsForLocation(locationData) {
+    const coords = validMapCoordinates(locationData && locationData.latitude, locationData && locationData.longitude);
+    const query = coords ? `${coords.latitude},${coords.longitude}` : mapLocationText(locationData);
+    if (!query) {
+      toast('No map location available.');
+      return;
+    }
+    const encodedQuery = coords ? query : encodeURIComponent(query);
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodedQuery}`, '_blank', 'noopener,noreferrer');
+  }
+
+  function openMapsForMeet(meetId) {
+    const meet = (appData.meets || []).find(m => m.id === meetId);
+    openMapsForLocation(meet);
+  }
+
+  function openMapsForCheckin(checkInId) {
+    const checkin = (appData.checkins || []).find(c => c.id === checkInId);
+    openMapsForLocation(checkin);
+  }
+
+  function meetMapLink(meet) {
+    const label = meetLocationLabel(meet);
+    if (!label) return '';
+    return `<button class="map-link" type="button" title="Open this meet in Google Maps" onclick="openMapsForMeet('${esc(meet.id)}')">📍 <span>${esc(label)}</span></button>`;
+  }
+
+  function checkinMapLink(checkin) {
+    const label = mapLocationText(checkin) || 'Cruise spot shared';
+    return `<button class="map-link" type="button" title="Open this cruise spot in Google Maps" onclick="openMapsForCheckin('${esc(checkin.id)}')">📍 <span>${esc(label)}</span></button>`;
+  }
+
   function upcomingMeetTime(meet) {
     const date = meet && meet.date ? meet.date : '';
     const time = meet && meet.time ? meet.time : '12:00';
@@ -3981,7 +4034,7 @@
           <div class="meet-bdy">
             <div class="meet-date-badge">📅 ${esc(when)}</div>
             <div class="meet-title">${esc(nextMeet.title)}</div>
-            <div class="meet-loc">📍 ${esc(nextMeet.location)}</div>
+            <div class="meet-loc">${meetMapLink(nextMeet)}</div>
             ${renderMeetCounts(nextMeet, meetCheckedInRoster(nextMeet.id).length)}
             <button class="checkin-btn" onclick="switchTab('meets')">View All Meets →</button>
           </div>
@@ -4440,7 +4493,7 @@
         <div class="meet-bdy">
           <div class="meet-date-badge">📅 ${fmtDate(m.date)} · ${fmtTime(m.time)}</div>
           <div class="meet-title">${esc(m.title)}</div>
-          <div class="meet-loc">📍 ${esc(m.location)}</div>
+          <div class="meet-loc">${meetMapLink(m)}</div>
           <div class="meet-desc">${esc(m.desc)}</div>
 
           <!-- RSVP and check-in counts -->
@@ -4813,6 +4866,9 @@
   window.deleteMeet = deleteMeet;
   window.setRsvp   = setRsvp;
   window.checkIn   = checkIn;
+  window.openMapsForLocation = openMapsForLocation;
+  window.openMapsForMeet = openMapsForMeet;
+  window.openMapsForCheckin = openMapsForCheckin;
   window.toggleCruiseJoin = toggleCruiseJoin;
 
 
@@ -5077,9 +5133,10 @@
     const counts = normalizeRsvpCounts(meet.rsvp);
     return `<div class="meet-popup">
       <div class="meet-popup-title">${esc(meet.title)}</div>
-      <div class="meet-popup-meta">📅 ${esc(fmtDate(meet.date))}${meet.time ? ` · ${esc(fmtTime(meet.time))}` : ''}<br>📍 ${esc(meetLocationLabel(meet))}</div>
+      <div class="meet-popup-meta">📅 ${esc(fmtDate(meet.date))}${meet.time ? ` · ${esc(fmtTime(meet.time))}` : ''}<br>${meetMapLink(meet)}</div>
       <div class="meet-popup-counts"><span>${counts.going} Going</span><span>${counts.maybe} Maybe</span><span>${counts.not_going} Can't go</span></div>
-      <button class="meet-popup-btn" type="button" onclick="viewMeetFromMap('${meet.id}')">View meet</button>
+      <button class="meet-popup-btn" type="button" onclick="openMapsForMeet('${esc(meet.id)}')">Open in Maps</button>
+      <button class="meet-popup-btn" type="button" style="margin-top:6px;background:transparent;border:1px solid var(--accent-border);color:var(--accent)" onclick="viewMeetFromMap('${meet.id}')">View meet</button>
     </div>`;
   }
 
@@ -5092,10 +5149,11 @@
     return `<div class="meet-popup cruise-spot-popup">
       <div class="meet-popup-title">${memberProfileButton(checkin.user_id, checkin.display_name || 'CruiseCrew member')}</div>
       ${checkin.car_label ? `<div class="meet-popup-meta">🚗 ${esc(checkin.car_label)}</div>` : ''}
-      <div class="meet-popup-meta">📍 ${esc(checkin.location_text || 'Cruise spot shared')}</div>
+      <div class="meet-popup-meta">${checkinMapLink(checkin)}</div>
       ${checkin.note ? `<div class="meet-popup-meta">${esc(checkin.note)}</div>` : ''}
       ${meetTitle ? `<div class="meet-popup-meta">Meet: ${esc(meetTitle)}</div>` : ''}
       <div class="meet-popup-counts"><span>⏱ ${esc(checkinExpiresText(checkin.expires_at))} remaining</span></div>
+      <button class="meet-popup-btn" type="button" onclick="openMapsForCheckin('${esc(checkin.id)}')">Open in Maps</button>
     </div>`;
   }
 
@@ -5131,6 +5189,7 @@
       const lng = meetLongitude(meet);
       const marker = L.marker([lat, lng]).addTo(meetMapMarkers);
       marker.bindPopup(meetPopupHtml(meet), { maxWidth: 260, autoPanPadding: [18, 18] });
+      marker.on('click', () => openMapsForLocation(meet));
     });
 
     mappedCruiseSpots.forEach(checkin => {
@@ -5144,6 +5203,7 @@
         fillOpacity: 0.9
       }).addTo(meetMapMarkers);
       marker.bindPopup(cruiseSpotPopupHtml(checkin), { maxWidth: 260, autoPanPadding: [18, 18] });
+      marker.on('click', () => openMapsForLocation(checkin));
       marker.bindTooltip(cleanDisplayName(checkin.display_name, 'Cruise spot'), { direction: 'top', offset: [0, -8] });
     });
 
@@ -5167,7 +5227,7 @@
       <div class="no-location-list">
         ${missing.map(m => `<div class="no-location-item">
           <div class="no-location-title">${esc(m.title)}</div>
-          <div class="no-location-meta">📅 ${esc(fmtDate(m.date))}${m.time ? ` · ${esc(fmtTime(m.time))}` : ''}<br>📍 ${esc(m.location || 'Location label missing')}</div>
+          <div class="no-location-meta">📅 ${esc(fmtDate(m.date))}${m.time ? ` · ${esc(fmtTime(m.time))}` : ''}<br>${meetMapLink(m) || '📍 Location label missing'}</div>
           <div class="no-location-action">${canManageMeet ? `<button class="btn-sm-ghost" type="button" onclick="editMeetFromMap('${m.id}')">Add map location</button>` : `<button class="btn-sm-ghost" type="button" onclick="viewMeetFromMap('${m.id}')">View meet</button>`}</div>
         </div>`).join('')}
       </div>`;
@@ -5205,7 +5265,7 @@
     const meetTitle = checkinMeetTitle(mine.meet_id);
     panel.innerHTML = `
       <div class="cruise-active-label">Cruise Mode Active</div>
-      <div class="cruise-active-spot">📍 ${esc(mine.location_text || 'Cruise spot shared')}</div>
+      <div class="cruise-active-spot">${checkinMapLink(mine)}</div>
       ${meetTitle ? `<div class="cruise-active-meta">Meet: ${esc(meetTitle)}</div>` : ''}
       ${mine.note ? `<div class="cruise-active-meta">Note: ${esc(mine.note)}</div>` : ''}
       <div class="cruise-active-meta">⏱ ${esc(checkinExpiresText(mine.expires_at))} remaining</div>
@@ -5266,7 +5326,7 @@
         <div class="ci-main">
           <div class="ci-name">${memberProfileButton(c.user_id, c.display_name || 'CruiseCrew member')}</div>
           <div class="ci-car">${esc(c.car_label || 'Garage profile pending')}</div>
-          <div class="ci-loc">📍 ${esc(c.location_text)}</div>
+          <div class="ci-loc">${checkinMapLink(c)}</div>
           ${c.note ? `<div class="ci-note">${esc(c.note)}</div>` : ''}
           ${meetTitle ? `<div class="ci-meet">Meet: ${esc(meetTitle)}</div>` : ''}
         </div>
