@@ -663,6 +663,44 @@
     }
     .hero-crew-description.show { display: block; }
 
+    .install-prompt {
+      display: none;
+      position: relative;
+      z-index: 2;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: linear-gradient(135deg, rgba(232,68,26,0.18), rgba(17,17,22,0.98));
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r);
+      box-shadow: 0 12px 34px rgba(0,0,0,0.35);
+    }
+    .install-prompt.show { display: block; }
+    .install-title {
+      font-family: var(--f-display);
+      font-size: 1.08rem;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .install-body { color: var(--text-2); font-size: 0.88rem; line-height: 1.45; }
+    .install-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .install-actions button { flex: 1 1 135px; }
+    .install-guide-list { margin: 8px 0 12px 20px; color: var(--text-2); font-size: 0.86rem; line-height: 1.55; }
+    .install-guide-section { margin-top: 12px; }
+    .install-guide-note {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r-sm);
+      background: var(--accent-lo);
+      color: var(--text);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+    #install-guide-modal { z-index: 2600; }
+
     .stats-row {
       display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px; margin-bottom: 18px;
@@ -1575,6 +1613,7 @@
           <button class="btn-cancel" id="auth-signout-btn">Sign Out</button>
         </div>
         <div class="auth-status" id="auth-status" role="status" aria-live="polite"></div>
+        <button class="btn-ghost" id="auth-install-app" type="button">Install App</button>
         <div class="auth-note">Public garage and event details stay readable when signed out.</div>
       </div>
     </div>
@@ -1583,6 +1622,15 @@
          HOME TAB
          ====================================================== -->
     <section class="tab-section active" id="tab-home">
+
+      <div class="install-prompt" id="install-prompt" role="region" aria-label="Install CruiseCrew">
+        <div class="install-title">Install CruiseCrew</div>
+        <div class="install-body">Add CruiseCrew to your Home Screen for the best app experience, faster access, and notifications.</div>
+        <div class="install-actions">
+          <button class="btn-primary" id="install-how-btn" type="button">How to Install</button>
+          <button class="btn-cancel" id="install-dismiss-btn" type="button">Maybe Later</button>
+        </div>
+      </div>
 
       <!-- Hero banner -->
       <div class="hero">
@@ -1628,6 +1676,35 @@
       </div>
 
     </section><!-- /home -->
+
+    <div class="crew-modal" id="install-guide-modal" aria-label="Install CruiseCrew guide" role="dialog" aria-modal="true">
+      <div class="crew-modal-card">
+        <div class="crew-modal-head">
+          <div>
+            <div class="crew-modal-title">Install CruiseCrew</div>
+            <div class="crew-modal-sub">Add CruiseCrew to your Home Screen for the best app experience.</div>
+          </div>
+          <button class="auth-close" id="install-guide-close" type="button" aria-label="Close install guide">×</button>
+        </div>
+        <div class="install-guide-section">
+          <div class="form-lbl">On iPhone:</div>
+          <ol class="install-guide-list">
+            <li>Tap the Share button in Safari.</li>
+            <li>Tap Add to Home Screen.</li>
+            <li>Tap Add.</li>
+          </ol>
+        </div>
+        <div class="install-guide-section">
+          <div class="form-lbl">On Android:</div>
+          <ol class="install-guide-list">
+            <li>Tap the ⋮ menu in Chrome.</li>
+            <li>Tap Install app or Add to Home screen.</li>
+            <li>Tap Install.</li>
+          </ol>
+        </div>
+        <div class="install-guide-note">For iPhone notifications, CruiseCrew must be added to your Home Screen first.</div>
+      </div>
+    </div>
 
 
     <!-- ======================================================
@@ -2103,6 +2180,8 @@
   const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
   const APP_VERSION_PENDING_KEY = 'cruisecrew_pending_refresh_version';
   const APP_CONTROLLER_RELOAD_KEY = 'cruisecrew_controller_reload_at';
+  const INSTALL_PROMPT_DISMISSED_KEY = 'cruisecrew_install_prompt_dismissed_at';
+  const INSTALL_PROMPT_DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
   let loadedAppVersion = APP_VERSION;
   let latestRemoteVersion = '';
   let updateBannerVisible = false;
@@ -2115,6 +2194,69 @@
     const d = new Date();
     d.setDate(d.getDate() + n);
     return d.toISOString().split('T')[0];
+  }
+
+  function isAppStandalone() {
+    return !!(
+      (window.navigator && window.navigator.standalone === true) ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    );
+  }
+
+  function hasShowInstallOverride() {
+    return new URLSearchParams(window.location.search).get('showInstall') === '1';
+  }
+
+  function installPromptDismissed() {
+    const dismissedAt = Number(localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY) || 0);
+    if (!dismissedAt) return false;
+    return Date.now() - dismissedAt < INSTALL_PROMPT_DISMISS_MS;
+  }
+
+  function setInstallPromptVisible(show, reason = '') {
+    const prompt = document.getElementById('install-prompt');
+    if (prompt) prompt.classList.toggle('show', show);
+    const installAccess = document.getElementById('auth-install-app');
+    if (installAccess) installAccess.style.display = isAppStandalone() ? 'none' : '';
+    if (show) console.log('Install prompt shown');
+    else console.log('Install prompt hidden and why', reason || 'not eligible');
+  }
+
+  function updateInstallPrompt() {
+    const isStandalone = isAppStandalone();
+    const isDismissed = installPromptDismissed();
+    const showInstallOverride = hasShowInstallOverride();
+    console.log('Install prompt eligibility checked');
+    console.log('isStandalone value', isStandalone);
+    console.log('isDismissed value', isDismissed);
+    console.log('showInstall override value', showInstallOverride);
+
+    if (isStandalone) {
+      setInstallPromptVisible(false, 'app is running in standalone mode');
+      return;
+    }
+    if (isDismissed && !showInstallOverride) {
+      setInstallPromptVisible(false, 'prompt dismissed less than 7 days ago');
+      return;
+    }
+    setInstallPromptVisible(true);
+  }
+
+  function openInstallGuide() {
+    console.log('Install guide opened');
+    const modal = document.getElementById('install-guide-modal');
+    if (modal) modal.classList.add('open');
+  }
+
+  function closeInstallGuide() {
+    const modal = document.getElementById('install-guide-modal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  function dismissInstallPrompt() {
+    console.log('Install prompt dismissed');
+    localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, String(Date.now()));
+    setInstallPromptVisible(false, 'user tapped Maybe Later');
   }
 
   // Mobile keyboard helper: keep focused form controls above iOS/Safari/PWA keyboards.
@@ -3057,7 +3199,9 @@
     const addAnnBtn = document.getElementById('toggle-add-ann');
     const crewSwitcher = document.getElementById('crew-switcher');
     const notificationBell = document.getElementById('notification-bell');
+    const authInstallApp = document.getElementById('auth-install-app');
 
+    if (authInstallApp) authInstallApp.style.display = isAppStandalone() ? 'none' : '';
     if (crewSwitcher) crewSwitcher.classList.toggle('show', signedIn);
     if (notificationBell) notificationBell.classList.toggle('show', signedIn);
     if (!signedIn) {
@@ -4458,6 +4602,12 @@
 
   // Make switchTab available globally (used in home-tab links)
   window.switchTab = switchTab;
+
+  document.getElementById('install-how-btn').addEventListener('click', openInstallGuide);
+  document.getElementById('install-dismiss-btn').addEventListener('click', dismissInstallPrompt);
+  document.getElementById('auth-install-app').addEventListener('click', openInstallGuide);
+  document.getElementById('install-guide-close').addEventListener('click', closeInstallGuide);
+  document.getElementById('install-guide-modal').addEventListener('click', event => { if (event.target.id === 'install-guide-modal') closeInstallGuide(); });
 
   document.getElementById('crew-select').addEventListener('change', event => selectGroup(event.target.value));
   document.getElementById('crew-create').addEventListener('click', createGroup);
@@ -6989,6 +7139,7 @@ ${JSON.stringify({
     console.log('app init started');
     initAppVersionChecks();
     registerServiceWorker();
+    updateInstallPrompt();
     wireAuth();
     setAuthStatus('loading', 'Checking signed-in user...');
     try {
