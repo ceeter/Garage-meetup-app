@@ -916,7 +916,10 @@
     .map-note {
       background: var(--bg-card); border-top: 1px solid var(--border); padding: 12px 14px;
       font-size: 0.76rem; color: var(--text-3); line-height: 1.5;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
     }
+    .map-note span { min-width: 0; }
+    .map-recenter-btn { flex: 0 0 auto; }
     .map-empty {
       min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 8px; padding: 22px; text-align: center; color: var(--text-3);
@@ -1620,7 +1623,10 @@
       </div>
       <div class="map-wrap">
         <div id="meet-map" aria-label="Global meet locations map"></div>
-        <div class="map-note" id="meet-map-note">Global meet pins appear here when a meet has latitude and longitude.</div>
+        <div class="map-note" id="meet-map-note">
+          <span>Global meet pins appear here when a meet has latitude and longitude.</span>
+          <button class="btn-sm-ghost map-recenter-btn" type="button" id="map-recenter-btn">Re-center on me</button>
+        </div>
       </div>
       <div id="map-no-location"></div>
 
@@ -2044,8 +2050,14 @@
     crewSettingsBusy: false
   };
 
+  const DEFAULT_MAP_CENTER = { latitude: 39.7684, longitude: -86.1581 };
+
   let meetMap = null;
   let meetMapMarkers = null;
+  let meetMapUserMarker = null;
+  let userMapPosition = null;
+  let userMapLocationRequested = false;
+  let userMapLocationMessage = '';
 
 
   function selectedGroupId() {
@@ -2162,6 +2174,15 @@
   function meetLongitude(meet) {
     const value = Number(meet && meet.longitude);
     return Number.isFinite(value) && value >= -180 && value <= 180 ? value : null;
+  }
+
+  function validMapCoordinates(latitude, longitude) {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return null;
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return null;
+    if (lat === 0 && lng === 0) return null;
+    return { latitude: lat, longitude: lng };
   }
 
   function meetHasCoordinates(meet) {
@@ -4582,8 +4603,95 @@
       meetMap.remove();
       meetMap = null;
       meetMapMarkers = null;
+      meetMapUserMarker = null;
     }
     mapEl.innerHTML = `<div class="map-empty"><div class="map-empty-icon">🗺️</div><div class="map-empty-title">No mapped meets yet</div><div>${esc(message)}</div></div>`;
+  }
+
+
+  function mapNoteText(mappedCount) {
+    const pinText = mappedCount
+      ? `${mappedCount} global meet${mappedCount === 1 ? '' : 's'} mapped. Pins stay visible no matter which crew is selected.`
+      : 'No mapped meets yet. Add coordinates to a meet to show it here.';
+    return userMapLocationMessage ? `${pinText} ${userMapLocationMessage}` : pinText;
+  }
+
+  function setMapNote(message) {
+    const noteEl = document.getElementById('meet-map-note');
+    if (!noteEl) return;
+    const span = noteEl.querySelector('span');
+    if (span) span.textContent = message;
+    else noteEl.textContent = message;
+  }
+
+  function activeMapCenter() {
+    return userMapPosition || DEFAULT_MAP_CENTER;
+  }
+
+  function centerMeetMap(position = activeMapCenter(), zoom = 12) {
+    if (!meetMap) return;
+    const coords = validMapCoordinates(position.latitude, position.longitude) || DEFAULT_MAP_CENTER;
+    meetMap.setView([coords.latitude, coords.longitude], zoom);
+  }
+
+  function updateUserMapMarker() {
+    if (!meetMap || !window.L) return;
+    if (!userMapPosition) {
+      if (meetMapUserMarker) {
+        meetMap.removeLayer(meetMapUserMarker);
+        meetMapUserMarker = null;
+      }
+      return;
+    }
+    const coords = validMapCoordinates(userMapPosition.latitude, userMapPosition.longitude);
+    if (!coords) return;
+    if (!meetMapUserMarker) {
+      meetMapUserMarker = L.circleMarker([coords.latitude, coords.longitude], {
+        radius: 7,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#f97316',
+        fillOpacity: 0.9
+      }).addTo(meetMap).bindTooltip('You are here', { direction: 'top', offset: [0, -8] });
+    } else {
+      meetMapUserMarker.setLatLng([coords.latitude, coords.longitude]);
+    }
+  }
+
+  function handleMapLocationFailure() {
+    userMapLocationMessage = 'Location permission is off. Showing the default map area.';
+    userMapPosition = null;
+    centerMeetMap(DEFAULT_MAP_CENTER, 12);
+    updateUserMapMarker();
+    setMapNote(mapNoteText(globalMeets().filter(meetHasCoordinates).length));
+  }
+
+  function requestMapLocation(recenter = false) {
+    userMapLocationRequested = true;
+    if (!navigator.geolocation) {
+      handleMapLocationFailure();
+      if (recenter) toast('Location permission is off. Showing the default map area.');
+      return;
+    }
+
+    userMapLocationMessage = 'Finding your current map area…';
+    setMapNote(mapNoteText(globalMeets().filter(meetHasCoordinates).length));
+
+    navigator.geolocation.getCurrentPosition(position => {
+      const coords = validMapCoordinates(position.coords && position.coords.latitude, position.coords && position.coords.longitude);
+      if (!coords) {
+        handleMapLocationFailure();
+        return;
+      }
+      userMapPosition = coords;
+      userMapLocationMessage = 'Showing your current area. Your location stays on this device and is not saved.';
+      centerMeetMap(coords, 12);
+      updateUserMapMarker();
+      setMapNote(mapNoteText(globalMeets().filter(meetHasCoordinates).length));
+    }, () => {
+      handleMapLocationFailure();
+      if (recenter) toast('Location permission is off. Showing the default map area.');
+    }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
   }
 
   function meetPopupHtml(meet) {
@@ -4607,11 +4715,6 @@
       if (noteEl) noteEl.textContent = 'Map unavailable: Leaflet did not load.';
       return;
     }
-    if (!mappedMeets.length) {
-      renderMeetMapEmpty('No mapped meets yet. Add coordinates to a meet to show it here.');
-      if (noteEl) noteEl.textContent = 'No mapped meets yet. Add coordinates to a meet to show it here.';
-      return;
-    }
 
     if (!meetMap) {
       mapEl.innerHTML = '';
@@ -4621,24 +4724,23 @@
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(meetMap);
       meetMapMarkers = L.layerGroup().addTo(meetMap);
-    } else {
+    } else if (meetMapMarkers) {
       meetMapMarkers.clearLayers();
+    } else {
+      meetMapMarkers = L.layerGroup().addTo(meetMap);
     }
 
-    const bounds = [];
     mappedMeets.forEach(meet => {
       const lat = meetLatitude(meet);
       const lng = meetLongitude(meet);
       const marker = L.marker([lat, lng]).addTo(meetMapMarkers);
       marker.bindPopup(meetPopupHtml(meet), { maxWidth: 260, autoPanPadding: [18, 18] });
-      bounds.push([lat, lng]);
     });
 
-    const first = mappedMeets[0];
-    meetMap.setView([meetLatitude(first), meetLongitude(first)], bounds.length === 1 ? 12 : 10);
-    if (bounds.length > 1) meetMap.fitBounds(bounds, { padding: [28, 28], maxZoom: 13 });
+    centerMeetMap(activeMapCenter(), 12);
+    updateUserMapMarker();
     setTimeout(() => meetMap && meetMap.invalidateSize(), 80);
-    if (noteEl) noteEl.textContent = `${mappedMeets.length} global meet${mappedMeets.length === 1 ? '' : 's'} mapped. Pins stay visible no matter which crew is selected.`;
+    setMapNote(mapNoteText(mappedMeets.length));
   }
 
   function renderMeetsWithoutLocations() {
@@ -4664,6 +4766,7 @@
   function renderMapSection() {
     renderMeetMap();
     renderMeetsWithoutLocations();
+    if (!userMapLocationRequested) requestMapLocation(false);
   }
 
   function viewMeetFromMap(id) {
@@ -4812,6 +4915,7 @@
 
   document.getElementById('cruise-start').addEventListener('click', startCheckin);
   document.getElementById('cruise-stop').addEventListener('click', stopSharing);
+  document.getElementById('map-recenter-btn').addEventListener('click', () => requestMapLocation(true));
   document.getElementById('save-checkin-btn').addEventListener('click', saveCheckin);
   document.getElementById('cancel-checkin-btn').addEventListener('click', closeCheckinForm);
 
