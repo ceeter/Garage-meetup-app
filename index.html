@@ -1049,11 +1049,23 @@
     .photo-status.busy, .photo-status.warning { color: var(--amber); }
     .photo-debug {
       display: none;
-      margin-top: 8px;
+      margin-top: 10px;
+      padding: 10px;
       color: var(--amber);
       overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border: 1px solid rgba(245,158,11,0.32);
+      border-radius: var(--r-sm);
+      background: rgba(245,158,11,0.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
     }
     .photo-debug.show { display: block; }
+    .photo-build-marker {
+      margin: -4px 0 12px;
+      color: var(--amber);
+      font-size: 0.74rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+    }
     .photo-advanced {
       grid-column: 1 / -1;
       border: 1px solid var(--border);
@@ -1601,6 +1613,7 @@
         <div class="sec-title">Photo <em>Drops</em></div>
         <button class="btn-add" id="toggle-add-photo" title="Drop a Photo" aria-label="Drop a Photo">+</button>
       </div>
+      <div class="photo-build-marker">Photo upload debug build v2</div>
 
       <!-- Add Photo inline form -->
       <div class="inline-form" id="add-photo-form">
@@ -1636,11 +1649,11 @@
           </details>
         </div>
         <div class="photo-status" id="photo-status" role="status" aria-live="polite"></div>
-        <div class="photo-debug" id="photo-debug" aria-live="polite"></div>
         <div class="form-actions">
           <button class="btn-primary" id="save-photo-btn">Drop It</button>
           <button class="btn-cancel"  id="cancel-photo-btn">Cancel</button>
         </div>
+        <div class="photo-debug" id="photo-debug" aria-live="polite"></div>
       </div>
 
       <!-- Photo grid — populated by JS -->
@@ -4488,11 +4501,27 @@
     el.className = `photo-debug${message ? ' show' : ''}`;
   }
 
-  function photoInsertDebugMessage(err) {
-    const parts = [err && err.message, err && err.code, err && err.details, err && err.hint]
-      .map(part => String(part || '').trim())
-      .filter(Boolean);
-    return parts.length ? `Debug: ${parts.join(' | ')}` : 'Debug: photo insert failed, but Supabase did not return error details.';
+  function safeDebugValue(value) {
+    return value === undefined ? null : value;
+  }
+
+  function photoInsertDebugMessage(info) {
+    return `Photo insert debug details:
+${JSON.stringify({
+      table: safeDebugValue(info && info.table),
+      insertPayload: safeDebugValue(info && info.insertPayload),
+      error: {
+        message: safeDebugValue(info && info.message),
+        code: safeDebugValue(info && info.code),
+        details: safeDebugValue(info && info.details),
+        hint: safeDebugValue(info && info.hint)
+      },
+      currentAuthUserId: safeDebugValue(info && info.currentAuthUserId),
+      selectedCrewId: safeDebugValue(info && info.selectedCrewId),
+      selectedMeetId: safeDebugValue(info && info.selectedMeetId),
+      publicPhotoUrl: safeDebugValue(info && info.publicPhotoUrl),
+      storagePath: safeDebugValue(info && info.storagePath)
+    }, null, 2)}`;
   }
 
   function setPhotoUploadBusy(isBusy) {
@@ -4714,6 +4743,11 @@
     if (photoUploadBusy) return;
     let uploadedPath = '';
     let pendingPhotoInsertPayload = null;
+    let currentAuthUserId = null;
+    let selectedCrewIdForDebug = selectedGroupId() || null;
+    let selectedMeetIdForDebug = null;
+    let publicPhotoUrlForDebug = null;
+    let storagePathForDebug = null;
     let phase = 'prepare';
     setPhotoUploadBusy(true);
     setPhotoStatus('busy', 'Preparing photo...');
@@ -4721,7 +4755,9 @@
     try {
       phase = 'auth';
       const user = await currentSupabaseAuthUser();
+      currentAuthUserId = user.id;
       const meetId = document.getElementById('ph-meet').value || null;
+      selectedMeetIdForDebug = meetId;
       const fileInput = document.getElementById('ph-file');
       const file = fileInput && fileInput.files && fileInput.files[0];
       const pastedUrl = document.getElementById('ph-url').value.trim();
@@ -4729,6 +4765,7 @@
       const caption = document.getElementById('ph-cap').value.trim();
       const meet = meetId ? appData.meets.find(m => m.id === meetId) : null;
       if (meetId && !meet) { phase = 'validate'; throw new Error('Choose a valid meet for this photo.'); }
+      selectedCrewIdForDebug = (meet && meet.group_id) || selectedCrewIdForDebug;
 
       let imageUrl = pastedUrl;
       let storagePath = null;
@@ -4750,10 +4787,14 @@
         const uploaded = await uploadPhotoFile(user, uploadFile);
         imageUrl = uploaded.publicUrl;
         storagePath = uploaded.path;
+        publicPhotoUrlForDebug = uploaded.publicUrl;
+        storagePathForDebug = uploaded.path;
         uploadedPath = uploaded.path;
       } else if (!imageUrl) {
         phase = 'validate';
         throw new Error('Choose a photo from your device before dropping it.');
+      } else {
+        publicPhotoUrlForDebug = imageUrl;
       }
 
       phase = 'post';
@@ -4783,21 +4824,31 @@
       renderHome();
       toast(`Photo posted for ${meet ? meet.title : (spotLabel || 'Photo Drop')} 📸`);
     } catch (err) {
+      let photoInsertDebugInfo = null;
       if (phase === 'post') {
-        console.error('Photo feed/database insert failed after Storage upload', {
+        photoInsertDebugInfo = {
           table: (err && err.insertTable) || DB.photos.table,
-          payload: (err && err.insertPayload) || pendingPhotoInsertPayload,
+          insertPayload: (err && err.insertPayload) || pendingPhotoInsertPayload,
           message: err && err.message,
           code: err && err.code,
           details: err && err.details,
           hint: err && err.hint,
+          currentAuthUserId,
+          selectedCrewId: selectedCrewIdForDebug,
+          selectedMeetId: selectedMeetIdForDebug,
+          publicPhotoUrl: publicPhotoUrlForDebug,
+          storagePath: storagePathForDebug || uploadedPath
+        };
+        console.error('Photo feed/database insert failed after Storage upload', {
+          ...photoInsertDebugInfo,
           error: err
         });
       }
       if (uploadedPath) await cleanupUploadedPhoto(uploadedPath);
       const friendly = friendlyPhotoUploadError(err, phase);
-      setPhotoStatus('error', friendly);
-      setPhotoDebug(phase === 'post' ? photoInsertDebugMessage(err) : '');
+      const statusMessage = phase === 'post' && err && err.message ? `${friendly} Supabase error: ${err.message}` : friendly;
+      setPhotoStatus('error', statusMessage);
+      setPhotoDebug(photoInsertDebugInfo ? photoInsertDebugMessage(photoInsertDebugInfo) : '');
       toast(friendly);
       if (/sign in/i.test(friendly)) promptSignIn('Sign in to drop a photo.');
     } finally {
