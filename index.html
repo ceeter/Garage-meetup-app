@@ -92,7 +92,7 @@
        HEADER
        ============================================================ */
     .app-header {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1300;
       min-height: calc(56px + var(--safe-top));
       display: flex; align-items: center; justify-content: space-between;
       gap: 12px; flex-wrap: wrap;
@@ -161,7 +161,7 @@
       position: fixed;
       top: calc(56px + var(--safe-top) + 8px);
       right: max(12px, env(safe-area-inset-right));
-      z-index: 520;
+      z-index: 2500;
       display: none;
       width: min(380px, calc(100vw - 24px));
       max-height: min(560px, calc(100dvh - 84px - var(--safe-top) - var(--safe-bot)));
@@ -217,7 +217,7 @@
        BOTTOM NAV
        ============================================================ */
     .bottom-nav {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 1200;
       height: calc(var(--nav-h) + var(--safe-bot));
       padding-bottom: max(var(--safe-bot), 0px);
       padding-left: max(0px, env(safe-area-inset-left));
@@ -368,7 +368,7 @@
     .auth-panel {
       position: fixed;
       inset: 0;
-      z-index: 500;
+      z-index: 2000;
       display: none;
       align-items: flex-start;
       justify-content: flex-end;
@@ -482,7 +482,7 @@
     .crew-chip.primary { color: var(--accent); border-color: var(--accent-border); background: var(--accent-lo); }
     .crew-chip.hidden { display: none; }
     .crew-modal {
-      position: fixed; inset: 0; z-index: 520;
+      position: fixed; inset: 0; z-index: 2000;
       display: none; align-items: flex-end; justify-content: center;
       padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
       background: rgba(0,0,0,0.62);
@@ -523,7 +523,7 @@
     .crew-settings-status.success { color: var(--green); }
     .member-link { color: var(--text); font: inherit; font-weight: inherit; text-align: left; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; min-height: 34px; padding: 0; }
     .member-link:hover, .member-link:focus-visible { color: var(--accent-hi); text-decoration-color: var(--accent-hi); outline: none; }
-    .profile-modal { position: fixed; inset: 0; z-index: 650; display: none; align-items: flex-end; justify-content: center; padding: 16px; background: rgba(0,0,0,0.68); }
+    .profile-modal { position: fixed; inset: 0; z-index: 2000; display: none; align-items: flex-end; justify-content: center; padding: 16px; background: rgba(0,0,0,0.68); }
     .profile-modal.open { display: flex; }
     .profile-card { width: min(100%, 500px); max-height: min(86dvh, 760px); overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-padding-bottom: calc(var(--safe-bot) + 96px); background: var(--bg-card); border: 1px solid var(--border2); border-radius: 20px 20px 14px 14px; padding: 16px; box-shadow: 0 18px 52px rgba(0,0,0,0.58); }
     .profile-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
@@ -583,7 +583,7 @@
       max-width: calc(100vw - 32px);
       padding: 9px 16px;
       border-radius: 99px; font-size: 0.82rem; font-weight: 500;
-      text-align: center; z-index: 600;
+      text-align: center; z-index: 2500;
       opacity: 0; pointer-events: none;
       transition: opacity 0.25s, transform 0.25s;
       box-shadow: 0 4px 24px rgba(0,0,0,0.5);
@@ -597,7 +597,7 @@
       left: max(16px, env(safe-area-inset-left));
       right: max(16px, env(safe-area-inset-right));
       bottom: calc(var(--nav-h) + var(--safe-bot) + 12px);
-      z-index: 610;
+      z-index: 2500;
       display: none;
       max-width: 520px;
       margin: 0 auto;
@@ -1021,8 +1021,8 @@
     .btn-stop.dimmed { opacity: 0.4; }
 
     /* Meet map */
-    .map-wrap { border-radius: var(--r); overflow: hidden; margin-bottom: 16px; border: 1px solid var(--border); background: var(--bg-card); }
-    #meet-map { height: 320px; width: 100%; min-width: 0; background: #09090F; }
+    .map-wrap { position: relative; z-index: 1; border-radius: var(--r); overflow: hidden; margin-bottom: 16px; border: 1px solid var(--border); background: var(--bg-card); }
+    #meet-map { position: relative; z-index: 1; height: 320px; width: 100%; min-width: 0; background: #09090F; }
     .map-note {
       background: var(--bg-card); border-top: 1px solid var(--border); padding: 12px 14px;
       font-size: 0.76rem; color: var(--text-3); line-height: 1.5;
@@ -1040,7 +1040,7 @@
     }
     .map-empty-icon { font-size: 2rem; }
     .map-empty-title { font-family: var(--f-display); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text); font-weight: 700; }
-    .leaflet-container { font-family: var(--f-body); background: #09090F; }
+    .leaflet-container { position: relative; z-index: 1; font-family: var(--f-body); background: #09090F; }
     .leaflet-control-attribution { font-size: 10px; }
     .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); box-shadow: 0 12px 30px rgba(0,0,0,0.45); }
     .leaflet-popup-content { margin: 12px; min-width: 190px; max-width: min(240px, 72vw); }
@@ -1057,8 +1057,8 @@
     .no-location-meta { color: var(--text-3); font-size: 0.78rem; line-height: 1.45; }
     .no-location-action { margin-top: 10px; }
     @media (max-width: 420px) {
-      #meet-map { height: 300px; }
-      .leaflet-top, .leaflet-bottom { z-index: 450; }
+      #meet-map { height: clamp(260px, 42vh, 360px); min-height: 260px; max-height: 360px; }
+      .leaflet-top, .leaflet-bottom { z-index: 2; }
     }
 
     /* Check-in list */
@@ -1240,7 +1240,7 @@
     }
     .photo-advanced .form-grp { margin-top: 10px; }
     .photo-lightbox {
-      position: fixed; inset: 0; z-index: 1200;
+      position: fixed; inset: 0; z-index: 2000;
       display: none; align-items: center; justify-content: center;
       padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
       background: rgba(0,0,0,0.86);
@@ -1360,6 +1360,18 @@
     @media (max-width: 767px) {
       html {
         scroll-padding-bottom: calc(var(--nav-h) + var(--safe-bot) + var(--keyboard-inset) + 120px);
+      }
+      .main {
+        padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 96px);
+      }
+      .map-wrap {
+        border-radius: 18px;
+      }
+      #meet-map,
+      .leaflet-container {
+        height: clamp(260px, 42vh, 360px);
+        min-height: 260px;
+        max-height: 360px;
       }
       body.keyboard-open {
         padding-bottom: calc(max(16px, var(--safe-bot)) + var(--keyboard-inset));
@@ -4429,8 +4441,10 @@
       photos:   renderPhotos,
       announce: renderAnnouncements
     };
-    if (name === 'map') refreshCheckins(false);
-    else if (renders[name]) renders[name]();
+    if (name === 'map') {
+      refreshCheckins(false);
+      scheduleMeetMapResize(180);
+    } else if (renders[name]) renders[name]();
   }
 
   // Wire nav buttons
@@ -5657,6 +5671,14 @@
     </div>`;
   }
 
+  function isMobileMapViewport() {
+    return window.matchMedia && window.matchMedia('(max-width: 767px) and (pointer: coarse)').matches;
+  }
+
+  function scheduleMeetMapResize(delay = 120) {
+    setTimeout(() => meetMap && meetMap.invalidateSize(), delay);
+  }
+
   function renderMeetMap() {
     const noteEl = document.getElementById('meet-map-note');
     const mapEl = document.getElementById('meet-map');
@@ -5672,7 +5694,7 @@
 
     if (!meetMap) {
       mapEl.innerHTML = '';
-      meetMap = L.map(mapEl, { zoomControl: true, attributionControl: true });
+      meetMap = L.map(mapEl, { zoomControl: true, attributionControl: true, dragging: !isMobileMapViewport() });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
@@ -5707,7 +5729,7 @@
 
     centerMeetMap(activeMapCenter(), 12);
     updateUserMapMarker();
-    setTimeout(() => meetMap && meetMap.invalidateSize(), 80);
+    scheduleMeetMapResize(120);
     setMapNote(mapNoteText(mappedMeets.length));
   }
 
