@@ -2000,7 +2000,7 @@
       table: 'meets', order: 'date',
       toDb: m => {
         const row = {
-          id: m.id, group_id: m.group_id || null, title: m.title, date: m.date, time: m.time || null,
+          id: m.id, title: m.title, date: m.date, time: m.time || null,
           location: m.location, description: m.desc || '',
           rsvp: m.rsvp || emptyRsvpCounts(),
           my_rsvp: m.myRsvp || null,
@@ -2160,18 +2160,17 @@
   }
 
   function scopedMeets() {
-    const gid = selectedGroupId();
-    return gid ? globalMeets().filter(m => m.group_id === gid) : globalMeets();
+    return globalMeets();
   }
 
   function scopedPhotos() {
     const gid = selectedGroupId();
-    return gid ? (appData.photos || []).filter(p => p.group_id === gid || (p.meet_id && scopedMeets().some(m => m.id === p.meet_id))) : (appData.photos || []);
+    return gid ? (appData.photos || []).filter(p => p.group_id === gid) : (appData.photos || []);
   }
 
   function scopedCheckins() {
     const gid = selectedGroupId();
-    return gid ? (appData.checkins || []).filter(c => c.group_id === gid || (c.meet_id && scopedMeets().some(m => m.id === c.meet_id))) : (appData.checkins || []);
+    return gid ? (appData.checkins || []).filter(c => c.group_id === gid) : (appData.checkins || []);
   }
 
 
