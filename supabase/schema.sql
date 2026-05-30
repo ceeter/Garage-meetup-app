@@ -69,7 +69,6 @@ create table if not exists public.meets (
   my_rsvp text,
   checked_in boolean not null default false,
   created_by uuid references auth.users(id) on delete set null,
-  group_id uuid references public.groups(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -140,7 +139,6 @@ alter table public.group_memberships add column if not exists role text not null
 alter table public.members add column if not exists user_id uuid unique references auth.users(id) on delete cascade;
 alter table public.members add column if not exists updated_at timestamptz not null default now();
 alter table public.meets add column if not exists created_by uuid references auth.users(id) on delete set null;
-alter table public.meets add column if not exists group_id uuid references public.groups(id) on delete set null;
 alter table public.meets add column if not exists latitude double precision;
 alter table public.meets add column if not exists longitude double precision;
 alter table public.meets add column if not exists location_label text;
@@ -209,7 +207,6 @@ create index if not exists check_ins_group_id_idx on public.check_ins(group_id);
 create index if not exists groups_owner_id_idx on public.groups(owner_id);
 create index if not exists group_memberships_group_id_idx on public.group_memberships(group_id);
 create index if not exists group_memberships_user_id_idx on public.group_memberships(user_id);
-create index if not exists meets_group_id_idx on public.meets(group_id);
 create index if not exists photo_drops_meet_id_idx on public.photo_drops(meet_id);
 create index if not exists photo_drops_user_id_idx on public.photo_drops(user_id);
 create index if not exists photo_drops_group_id_idx on public.photo_drops(group_id);
