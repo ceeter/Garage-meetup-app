@@ -134,6 +134,58 @@
       flex-shrink: 0;
     }
     .account-trigger.signed-in { color: var(--green); border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.1); }
+    .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .notification-wrap { position: relative; flex-shrink: 0; }
+    .notification-bell {
+      position: relative;
+      width: 44px; height: 44px;
+      display: none; align-items: center; justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text);
+      background: rgba(255,255,255,0.04);
+      font-size: 1.05rem;
+    }
+    .notification-bell.show { display: inline-flex; }
+    .notification-bell:hover, .notification-bell.open { border-color: var(--accent-border); color: var(--accent); background: var(--accent-lo); }
+    .notification-badge {
+      position: absolute; top: -3px; right: -3px;
+      display: none; min-width: 18px; height: 18px; padding: 0 5px;
+      border-radius: 999px;
+      background: var(--red); color: #fff;
+      font-size: 0.64rem; font-weight: 800; line-height: 18px;
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+    .notification-badge.show { display: block; }
+    .notification-panel {
+      position: fixed;
+      top: calc(56px + var(--safe-top) + 8px);
+      right: max(12px, env(safe-area-inset-right));
+      z-index: 520;
+      display: none;
+      width: min(380px, calc(100vw - 24px));
+      max-height: min(560px, calc(100dvh - 84px - var(--safe-top) - var(--safe-bot)));
+      overflow: hidden;
+      background: var(--bg-card);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+    }
+    .notification-panel.open { display: block; }
+    .notification-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border-bottom: 1px solid var(--border); }
+    .notification-title { font-family: var(--f-display); font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+    .notification-sub { font-size: 0.76rem; color: var(--text-2); margin-top: 2px; }
+    .notification-actions { display: flex; gap: 8px; align-items: center; }
+    .notification-list { max-height: 420px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .notification-row { padding: 12px 14px; border-bottom: 1px solid var(--border); background: transparent; }
+    .notification-row.unread { background: rgba(232,68,26,0.08); }
+    .notification-row-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 800; font-size: 0.9rem; }
+    .notification-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    .notification-body { color: var(--text-2); font-size: 0.82rem; margin-top: 4px; line-height: 1.4; }
+    .notification-time { color: var(--text-3); font-size: 0.72rem; margin-top: 6px; }
+    .notification-empty { padding: 22px 16px; color: var(--text-2); text-align: center; font-size: 0.86rem; }
+    .notification-error { padding: 10px 14px; color: var(--amber); border-bottom: 1px solid var(--border); font-size: 0.78rem; display: none; }
+    .notification-error.show { display: block; }
 
     /* ============================================================
        MAIN SCROLL AREA
@@ -1359,12 +1411,35 @@
       <!-- RENAME: change CruiseCrew here -->
       <div class="logo-text">Cruise<em>Crew</em></div>
     </div>
-    <button class="account-trigger" id="account-trigger" type="button" aria-haspopup="dialog" aria-controls="auth-panel" aria-expanded="false">Sign In</button>
+    <div class="header-actions">
+      <div class="notification-wrap">
+        <button class="notification-bell" id="notification-bell" type="button" aria-label="Open in-app notifications" aria-haspopup="dialog" aria-controls="notification-panel" aria-expanded="false">
+          🔔 <span class="notification-badge" id="notification-badge">0</span>
+        </button>
+      </div>
+      <button class="account-trigger" id="account-trigger" type="button" aria-haspopup="dialog" aria-controls="auth-panel" aria-expanded="false">Sign In</button>
+    </div>
   </header>
 
   <!-- Toast notification (auto-show/hide) -->
   <div class="toast" id="toast"></div>
   <button class="update-banner" id="update-banner" type="button">New CruiseCrew update available. Tap to refresh.</button>
+
+  <!-- Phase 1 in-app notifications only. This is not phone push notification support yet. -->
+  <div class="notification-panel" id="notification-panel" role="dialog" aria-modal="false" aria-label="In-app notifications">
+    <div class="notification-head">
+      <div>
+        <div class="notification-title">Notifications</div>
+        <div class="notification-sub" id="notification-sub">Recent in-app updates</div>
+      </div>
+      <div class="notification-actions">
+        <button class="btn-ghost" id="notification-mark-all" type="button">Mark all read</button>
+        <button class="auth-close" id="notification-close" type="button" aria-label="Close notifications">×</button>
+      </div>
+    </div>
+    <div class="notification-error" id="notification-error" role="status" aria-live="polite"></div>
+    <div class="notification-list" id="notification-list"></div>
+  </div>
 
   <!-- ============================================================
        MAIN CONTENT
@@ -2289,6 +2364,7 @@
     cruiseJoins: [],
     groups: [],
     groupMemberships: [],
+    notifications: [],
     selectedGroupId: localStorage.getItem(LS.selectedGroup) || '',
     garageView: localStorage.getItem(LS.garageView) || 'crew',
     rsvps: [],
@@ -2718,6 +2794,7 @@
   let lastHandledAuthKey = '';
   let authRefreshPromise = null;
   let authTransitionVersion = 0;
+  let notificationChannel = null;
 
   function lsGet(key) {
     try { return JSON.parse(localStorage.getItem(key)) || []; }
@@ -2832,6 +2909,9 @@
     appData.checkins = [];
     appData.cruiseJoins = [];
     appData.groupMemberships = [];
+    appData.notifications = [];
+    teardownNotificationsRealtime();
+    closeNotificationsPanel();
     appData.selectedGroupId = '';
     localStorage.removeItem(LS.selectedGroup);
     appData.meets = appData.meets.map(meet => ({ ...meet, myRsvp: null }));
@@ -2960,8 +3040,15 @@
     const addPhotoBtn = document.getElementById('toggle-add-photo');
     const addAnnBtn = document.getElementById('toggle-add-ann');
     const crewSwitcher = document.getElementById('crew-switcher');
+    const notificationBell = document.getElementById('notification-bell');
 
     if (crewSwitcher) crewSwitcher.classList.toggle('show', signedIn);
+    if (notificationBell) notificationBell.classList.toggle('show', signedIn);
+    if (!signedIn) {
+      appData.notifications = [];
+      closeNotificationsPanel();
+    }
+    renderNotifications();
     panel.classList.toggle('signed-in', signedIn);
     trigger.classList.toggle('signed-in', signedIn);
     trigger.textContent = signedIn ? compactEmail(email) : 'Sign In';
@@ -3065,6 +3152,9 @@
         }
 
         await loadAllData(false, false);
+        await fetchNotifications(false);
+        await createDueMeetReminderNotifications(false);
+        setupNotificationsRealtime();
         if (refreshVersion !== authTransitionVersion) return;
         updateAuthUI();
         handleInviteFromUrl();
@@ -3179,6 +3269,7 @@
     document.getElementById('auth-signup-btn').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
     document.getElementById('auth-signin-btn').addEventListener('click', signIn);
     document.getElementById('auth-signout-btn').addEventListener('click', signOut);
+    wireNotifications();
   }
 
   function attachAuthStateListener() {
@@ -3813,6 +3904,289 @@
     return data ? upsertLocalMemberProfile(normalize('members', data)) : null;
   }
 
+
+  // ==============================================================
+  // PHASE 1 IN-APP NOTIFICATIONS (not phone push notifications yet)
+  // ==============================================================
+
+  function notificationDedupeKey(type, referenceType, referenceId, suffix = '') {
+    return [type, referenceType, referenceId, suffix].filter(Boolean).join(':');
+  }
+
+  function notificationUnreadCount() {
+    return (appData.notifications || []).filter(n => !n.read_at).length;
+  }
+
+  function setNotificationError(message = '') {
+    const el = document.getElementById('notification-error');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.toggle('show', !!message);
+  }
+
+  function renderNotifications() {
+    const bell = document.getElementById('notification-bell');
+    const badge = document.getElementById('notification-badge');
+    const list = document.getElementById('notification-list');
+    const sub = document.getElementById('notification-sub');
+    const markAll = document.getElementById('notification-mark-all');
+    if (!bell || !badge || !list) return;
+
+    const signedIn = !!currentUserId();
+    const unread = signedIn ? notificationUnreadCount() : 0;
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.classList.toggle('show', unread > 0);
+    if (sub) sub.textContent = signedIn ? `${unread} unread • recent in-app updates` : 'Sign in to view notifications';
+    if (markAll) markAll.disabled = !signedIn || unread === 0;
+
+    if (!signedIn) {
+      list.innerHTML = '<div class="notification-empty">Sign in to view your in-app notifications.</div>';
+      return;
+    }
+
+    const rows = [...(appData.notifications || [])]
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      .slice(0, 30);
+    if (!rows.length) {
+      list.innerHTML = '<div class="notification-empty">No notifications yet.</div>';
+      return;
+    }
+
+    list.innerHTML = rows.map(n => {
+      const created = activityDate(n, n.created_at);
+      const unreadDot = n.read_at ? '' : '<span class="notification-dot" title="Unread"></span>';
+      return `<div class="notification-row ${n.read_at ? 'read' : 'unread'}">
+        <div class="notification-row-title"><span>${esc(n.title || 'Notification')}</span>${unreadDot}</div>
+        <div class="notification-body">${esc(n.body || '')}</div>
+        <div class="notification-time">${esc(formatActivityTime(created))}${n.read_at ? ' • Read' : ' • Unread'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function fetchNotifications(showError = true) {
+    if (!isSupabaseReady() || !currentUserId()) {
+      appData.notifications = [];
+      renderNotifications();
+      return [];
+    }
+
+    try {
+      const { data, error } = await supabaseClient
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      appData.notifications = data || [];
+      setNotificationError('');
+      renderNotifications();
+      console.log('[notifications] fetched', appData.notifications.length);
+      return appData.notifications;
+    } catch (err) {
+      console.error('[notifications] fetch failed', err);
+      if (showError) setNotificationError(`Could not refresh notifications: ${err.message}`);
+      renderNotifications();
+      return appData.notifications || [];
+    }
+  }
+
+  async function createNotificationForUser(userId, payload) {
+    // In-app notification row only; this does not send phone push notifications.
+    if (!isSupabaseReady() || !currentUserId() || !userId) return null;
+    const row = {
+      user_id: userId,
+      title: payload.title,
+      body: payload.body,
+      type: payload.type || 'general',
+      reference_type: payload.reference_type || null,
+      reference_id: payload.reference_id || null,
+      group_id: payload.group_id || null,
+      meet_id: payload.meet_id || null,
+      check_in_id: payload.check_in_id || null,
+      reminder_offset_minutes: payload.reminder_offset_minutes ?? null,
+      dedupe_key: payload.dedupe_key || notificationDedupeKey(payload.type || 'general', payload.reference_type || 'item', payload.reference_id || genId())
+    };
+
+    const { data, error } = await supabaseClient
+      .from('notifications')
+      .upsert(row, { onConflict: 'user_id,dedupe_key', ignoreDuplicates: true })
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (data && data.user_id === currentUserId()) {
+      appData.notifications = [data, ...(appData.notifications || []).filter(n => n.id !== data.id)];
+      renderNotifications();
+    }
+    return data;
+  }
+
+  async function createCruiseStartedNotifications(checkin) {
+    if (!isSupabaseReady() || !checkin || !checkin.id || !checkin.group_id) {
+      console.log('[notifications] cruise start skipped; no selected crew/group');
+      return;
+    }
+    try {
+      console.log('[notifications] creating cruise-start notifications', { checkInId: checkin.id, groupId: checkin.group_id });
+      const { error } = await supabaseClient.rpc('create_cruise_started_notifications', { target_check_in_id: checkin.id });
+      if (error) throw error;
+    } catch (err) {
+      console.error('[notifications] cruise-start notification failed', err);
+      toast('Cruise started, but crew notifications could not be created.');
+    }
+  }
+
+  function meetStartDate(meet) {
+    if (!meet || !meet.date) return null;
+    const time = meet.time || '12:00';
+    const date = new Date(`${meet.date}T${time}`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  async function createDueMeetReminderNotifications(showError = false) {
+    if (!isSupabaseReady() || !currentUserId()) return;
+    const goingMeetIds = new Set((appData.rsvps || [])
+      .filter(r => r.user_id === currentUserId() && normalizeRsvpStatus(r.status) === 'going')
+      .map(r => r.meet_id));
+    if (!goingMeetIds.size) return;
+
+    const now = Date.now();
+    const windows = [
+      { minutes: 24 * 60, label: '24 hours' },
+      { minutes: 60, label: '1 hour' }
+    ];
+
+    for (const meet of appData.meets || []) {
+      if (!goingMeetIds.has(meet.id)) continue;
+      const startsAt = meetStartDate(meet);
+      if (!startsAt) continue;
+      const msUntil = startsAt.getTime() - now;
+      for (const windowDef of windows) {
+        const targetMs = windowDef.minutes * 60 * 1000;
+        if (msUntil > targetMs || msUntil <= 0) continue;
+        const dedupe = notificationDedupeKey('meet_reminder', 'meet', meet.id, `${windowDef.minutes}m`);
+        if ((appData.notifications || []).some(n => n.dedupe_key === dedupe)) continue;
+        try {
+          await createNotificationForUser(currentUserId(), {
+            title: `Meet reminder: ${meet.title}`,
+            body: `${meet.title} starts in about ${windowDef.label} at ${meetLocationLabel(meet)}.`,
+            type: 'meet_reminder',
+            reference_type: 'meet',
+            reference_id: meet.id,
+            meet_id: meet.id,
+            reminder_offset_minutes: windowDef.minutes,
+            dedupe_key: dedupe
+          });
+          console.log('[notifications] meet reminder created', { meetId: meet.id, offset: windowDef.minutes });
+        } catch (err) {
+          console.error('[notifications] meet reminder failed', err);
+          if (showError) setNotificationError(`Could not create meet reminder: ${err.message}`);
+        }
+      }
+    }
+    await fetchNotifications(false);
+  }
+
+  async function markAllNotificationsRead() {
+    if (!isSupabaseReady() || !currentUserId()) return;
+    try {
+      const readAt = new Date().toISOString();
+      const { error } = await supabaseClient
+        .from('notifications')
+        .update({ read_at: readAt })
+        .is('read_at', null);
+      if (error) throw error;
+      appData.notifications = (appData.notifications || []).map(n => ({ ...n, read_at: n.read_at || readAt }));
+      renderNotifications();
+      toast('Notifications marked read');
+    } catch (err) {
+      console.error('[notifications] mark all failed', err);
+      setNotificationError(`Could not mark notifications read: ${err.message}`);
+    }
+  }
+
+  function openNotificationsPanel() {
+    if (!currentUserId()) { promptSignIn('Sign in to view notifications.'); return; }
+    document.getElementById('notification-panel').classList.add('open');
+    document.getElementById('notification-bell').classList.add('open');
+    document.getElementById('notification-bell').setAttribute('aria-expanded', 'true');
+    fetchNotifications(false);
+  }
+
+  function closeNotificationsPanel() {
+    const panel = document.getElementById('notification-panel');
+    const bell = document.getElementById('notification-bell');
+    if (panel) panel.classList.remove('open');
+    if (bell) {
+      bell.classList.remove('open');
+      bell.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function toggleNotificationsPanel() {
+    const panel = document.getElementById('notification-panel');
+    if (panel && panel.classList.contains('open')) closeNotificationsPanel();
+    else openNotificationsPanel();
+  }
+
+  function wireNotifications() {
+    const bell = document.getElementById('notification-bell');
+    if (!bell || bell.dataset.wired === '1') return;
+    bell.dataset.wired = '1';
+    bell.addEventListener('click', toggleNotificationsPanel);
+    document.getElementById('notification-close').addEventListener('click', closeNotificationsPanel);
+    document.getElementById('notification-mark-all').addEventListener('click', markAllNotificationsRead);
+    document.addEventListener('click', (event) => {
+      const panel = document.getElementById('notification-panel');
+      if (!panel || !panel.classList.contains('open')) return;
+      if (panel.contains(event.target) || bell.contains(event.target)) return;
+      closeNotificationsPanel();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeNotificationsPanel();
+    });
+  }
+
+  function teardownNotificationsRealtime() {
+    if (notificationChannel && supabaseClient && supabaseClient.removeChannel) {
+      supabaseClient.removeChannel(notificationChannel);
+    }
+    notificationChannel = null;
+  }
+
+  function setupNotificationsRealtime() {
+    teardownNotificationsRealtime();
+    if (!isSupabaseReady() || !currentUserId() || !supabaseClient.channel) return;
+    try {
+      const uid = currentUserId();
+      notificationChannel = supabaseClient
+        .channel(`notifications:${uid}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, payload => {
+          console.log('[notifications] realtime payload', payload.eventType);
+          const row = payload.new || payload.old;
+          if (!row) return;
+          if (payload.eventType === 'DELETE') {
+            appData.notifications = (appData.notifications || []).filter(n => n.id !== row.id);
+          } else {
+            appData.notifications = [row, ...(appData.notifications || []).filter(n => n.id !== row.id)];
+          }
+          renderNotifications();
+        })
+        .subscribe(status => {
+          console.log('[notifications] realtime status', status);
+          if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+            setNotificationError('Live notifications are unavailable. Pulling the latest notifications instead.');
+            fetchNotifications(false);
+          } else if (status === 'SUBSCRIBED') {
+            setNotificationError('');
+          }
+        });
+    } catch (err) {
+      console.error('[notifications] realtime setup failed', err);
+      setNotificationError('Live notifications are unavailable. Refreshing normally.');
+      fetchNotifications(false);
+    }
+  }
+
   async function loadKind(kind, showError = true, throwOnError = false) {
     if (!isSupabaseReady()) {
       appData[kind] = lsGet(localKey(kind));
@@ -3929,8 +4303,11 @@
     const kinds = ['members','meets','photos','announcements'];
     const results = await Promise.allSettled([
       ...kinds.map(kind => loadKind(kind, showToast, throwOnError)),
-      loadCheckins(showToast)
+      loadCheckins(showToast),
+      fetchNotifications(false)
     ]);
+
+    await createDueMeetReminderNotifications(false);
 
     if (isSupabaseReady()) console.log('public garage data loaded');
 
@@ -4921,6 +5298,7 @@
         }
         await loadKind('meets', false);
         await loadCheckins(false);
+        await createDueMeetReminderNotifications(false);
       } else {
         await updateRecord('meets', meetId, m);
       }
@@ -5571,7 +5949,8 @@
       setCheckinSaving(true);
       setCheckinStatus('loading', existing ? 'Updating your cruise spot...' : 'Sharing your cruise spot for 4 hours...');
       if (!isSupabaseReady()) throw new Error('Supabase is not configured.');
-      await upsertCheckin(payload, existing ? 'Cruise Mode spot update' : 'Cruise Mode start');
+      const savedCheckin = await upsertCheckin(payload, existing ? 'Cruise Mode spot update' : 'Cruise Mode start');
+      if (!existing) await createCruiseStartedNotifications(savedCheckin);
       closeCheckinForm();
       await refreshCheckins(false);
       renderMeets();
@@ -6546,6 +6925,7 @@ ${JSON.stringify({
       await loadCurrentSession();
       await loadCurrentUser();
       await loadAllData(true, false);
+      setupNotificationsRealtime();
       updateAuthUI();
       renderHome();
       renderActiveTab();
