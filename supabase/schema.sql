@@ -847,7 +847,7 @@ drop policy if exists "users can delete own photo drops" on public.photo_drops;
 
 create policy "anon and authenticated can read photo drops" on public.photo_drops
   for select to anon, authenticated using (
-    hidden_by_dislikes = false
+    hidden_by_dislikes is not true
     or auth.uid() = user_id
     or public.is_admin_user()
   );

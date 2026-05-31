@@ -2586,7 +2586,9 @@
     photos: {
       table: 'photo_drops',
       order: 'created_at',
-      select: 'id, group_id, meet_id, user_id, member_id, image_url, storage_path, caption, display_name, car_label, spot_label, like_count, dislike_count, hidden_by_dislikes, hidden_at, created_at',
+      // Use '*' so old photo_drops rows/databases without the reaction columns still load;
+      // normalize() supplies safe defaults until the migration is applied.
+      select: '*',
       toDb: p => ({
         ...(isUuid(p.id) ? { id: p.id } : {}),
         group_id: p.group_id || selectedGroupId() || null,
@@ -2604,7 +2606,7 @@
         ...p,
         like_count: Number(p.like_count || 0),
         dislike_count: Number(p.dislike_count || 0),
-        hidden_by_dislikes: !!p.hidden_by_dislikes,
+        hidden_by_dislikes: p.hidden_by_dislikes === true,
         hidden_at: p.hidden_at || null,
         my_reaction: appData.photoReactions[p.id] || null,
         date: p.created_at || null
@@ -2771,7 +2773,7 @@
 
   function scopedPhotos() {
     const gid = selectedGroupId();
-    const visiblePhotos = (appData.photos || []).filter(p => !p.hidden_by_dislikes);
+    const visiblePhotos = (appData.photos || []).filter(p => p.hidden_by_dislikes !== true);
     return gid ? visiblePhotos.filter(p => p.group_id === gid) : visiblePhotos;
   }
 
@@ -6918,7 +6920,7 @@
     }
 
     const photo = (appData.photos || []).find(p => p.id === photoId);
-    if (!photo || photo.hidden_by_dislikes) {
+    if (!photo || photo.hidden_by_dislikes === true) {
       toast('That photo is no longer available in the feed.');
       return;
     }
