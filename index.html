@@ -1385,6 +1385,26 @@
     }
 
     /* ============================================================
+       ADMIN PANEL
+       ============================================================ */
+    .admin-panel { display: grid; gap: 14px; }
+    .admin-section { border: 1px solid var(--border); border-radius: var(--r); background: var(--bg-card); overflow: hidden; }
+    .admin-section-head { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .admin-section-title { font-family: var(--f-display); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+    .admin-section-sub { color: var(--text-2); font-size: 0.82rem; margin-top: 3px; }
+    .admin-list { display: grid; gap: 10px; padding: 12px; }
+    .admin-row { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-sm); background: rgba(255,255,255,0.03); }
+    .admin-row-main { display: grid; gap: 3px; min-width: 0; }
+    .admin-row-title { font-weight: 800; overflow-wrap: anywhere; }
+    .admin-row-meta { color: var(--text-2); font-size: 0.78rem; overflow-wrap: anywhere; }
+    .admin-role-pill { display: inline-flex; width: fit-content; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--accent-border); background: var(--accent-lo); color: var(--accent); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+    .admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .admin-photo-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--r-sm); background: var(--bg-input); }
+    .admin-hidden-note { color: var(--amber); font-weight: 700; }
+    @media (min-width: 760px) { .admin-row { grid-template-columns: minmax(0,1fr) auto; align-items: center; } .admin-photo-row { grid-template-columns: 160px minmax(0,1fr) auto; } }
+
+
+    /* ============================================================
        ANNOUNCEMENTS
        ============================================================ */
     .ann-card {
@@ -2154,6 +2174,20 @@
 
     </section><!-- /announce -->
 
+
+    <!-- ======================================================
+         ADMIN PANEL TAB
+         ====================================================== -->
+    <section class="tab-section" id="tab-admin">
+      <div class="sec-hdr">
+        <div>
+          <div class="sec-title">Admin <em>Panel</em></div>
+          <div class="sec-sub" id="admin-role-summary">Role-based controls for CruiseCrew staff.</div>
+        </div>
+      </div>
+      <div class="admin-panel" id="admin-panel"></div>
+    </section><!-- /admin -->
+
     <footer class="app-version-footer" id="app-version-footer">CruiseCrew</footer>
 
   </main><!-- /main -->
@@ -2214,6 +2248,15 @@
         </svg>
         News
       </button>
+
+      <button class="nav-item" data-tab="admin" id="admin-nav-item" aria-label="Admin Panel" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M9 12l2 2 4-5"/>
+        </svg>
+        Admin
+      </button>
+
 
     </div>
   </nav><!-- /bottom-nav -->
@@ -2607,6 +2650,9 @@
         like_count: Number(p.like_count || 0),
         dislike_count: Number(p.dislike_count || 0),
         hidden_by_dislikes: p.hidden_by_dislikes === true,
+        hidden_by_moderator: p.hidden_by_moderator === true,
+        hidden_by_moderator_at: p.hidden_by_moderator_at || null,
+        hidden_by_moderator_user_id: p.hidden_by_moderator_user_id || null,
         hidden_at: p.hidden_at || null,
         my_reaction: appData.photoReactions[p.id] || null,
         date: p.created_at || null
@@ -2637,6 +2683,8 @@
     groups: [],
     groupMemberships: [],
     notifications: [],
+    userRoles: [],
+    currentUserRole: '',
     selectedGroupId: localStorage.getItem(LS.selectedGroup) || '',
     garageView: localStorage.getItem(LS.garageView) || 'crew',
     rsvps: [],
@@ -2773,7 +2821,7 @@
 
   function scopedPhotos() {
     const gid = selectedGroupId();
-    const visiblePhotos = (appData.photos || []).filter(p => p.hidden_by_dislikes !== true);
+    const visiblePhotos = (appData.photos || []).filter(p => p.hidden_by_dislikes !== true && p.hidden_by_moderator !== true);
     return gid ? visiblePhotos.filter(p => p.group_id === gid) : visiblePhotos;
   }
 
@@ -3239,6 +3287,8 @@
     appData.photos = appData.photos.map(photo => ({ ...photo, my_reaction: null }));
     appData.groupMemberships = [];
     appData.notifications = [];
+    appData.userRoles = [];
+    appData.currentUserRole = '';
     teardownNotificationsRealtime();
     teardownMemberCountsRealtime();
     closeNotificationsPanel();
@@ -3261,17 +3311,68 @@
     resetSignedOutUiState({ closePanel: false });
   }
 
-  function isAdminUser(user) {
+  function isLegacyAdminEmail(user) {
     const email = String(user && user.email || '').trim().toLowerCase();
     return !!email && ADMIN_EMAILS.map(adminEmail => String(adminEmail).trim().toLowerCase()).includes(email);
   }
 
+  function roleRank(role) {
+    return ({ owner: 4, admin: 3, moderator: 2 })[role] || 0;
+  }
+
+  function strongestRole(roles) {
+    return (roles || []).map(row => row && row.role).filter(Boolean).sort((a, b) => roleRank(b) - roleRank(a))[0] || '';
+  }
+
+  function currentUserRole() {
+    return appData.currentUserRole || '';
+  }
+
+  function isOwner() { return currentUserRole() === 'owner'; }
+  function isAdmin() { return currentUserRole() === 'admin' || isOwner() || isLegacyAdminEmail(appData.currentUser || (appData.currentSession && appData.currentSession.user)); }
+  function isModerator() { return currentUserRole() === 'moderator'; }
+  function canManagePhotos() { return isOwner() || isAdmin() || isModerator(); }
+  function canManageMeets() { return isOwner() || isAdmin(); }
+  function canManageNews() { return isOwner() || isAdmin(); }
+  function canManageRoles() { return isOwner(); }
+
   function currentUserIsAdmin() {
-    return isAdminUser(appData.currentUser || (appData.currentSession && appData.currentSession.user));
+    return canManageMeets();
+  }
+
+  function currentUserRoleLabel() {
+    if (isOwner()) return 'Owner';
+    if (currentUserRole() === 'admin' || isLegacyAdminEmail(appData.currentUser || (appData.currentSession && appData.currentSession.user))) return 'Admin';
+    if (isModerator()) return 'Moderator';
+    return 'Member';
+  }
+
+  async function loadCurrentUserRoles(showError = false) {
+    appData.userRoles = [];
+    appData.currentUserRole = '';
+    if (!isSupabaseReady() || !currentUserId()) return [];
+    const { data, error } = await supabaseClient
+      .from('user_roles')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.warn('Could not load app roles', error);
+      if (showError) toast(`Could not load admin role: ${error.message}`);
+      return [];
+    }
+    appData.userRoles = data || [];
+    appData.currentUserRole = strongestRole(appData.userRoles.filter(row => row.user_id === currentUserId()));
+    return appData.userRoles;
   }
 
   function requireAdminUser(message = 'Admin only') {
-    if (currentUserIsAdmin()) return true;
+    if (canManageMeets()) return true;
+    toast(message);
+    return false;
+  }
+
+  function requirePhotoManager(message = 'Photo moderation is staff only.') {
+    if (canManagePhotos()) return true;
     toast(message);
     return false;
   }
@@ -3369,7 +3470,9 @@
   function updateAuthUI() {
     const signedIn = !!currentUserId();
     const authUiSignedIn = signedIn && !passwordRecoveryActive;
-    const isAdmin = !passwordRecoveryActive && currentUserIsAdmin();
+    const meetManager = !passwordRecoveryActive && canManageMeets();
+    const newsManager = !passwordRecoveryActive && canManageNews();
+    const staffUser = !passwordRecoveryActive && canManagePhotos();
     const email = currentUserEmail() || '';
     const panel = document.getElementById('auth-panel');
     const trigger = document.getElementById('account-trigger');
@@ -3389,10 +3492,13 @@
     const crewSwitcher = document.getElementById('crew-switcher');
     const notificationBell = document.getElementById('notification-bell');
     const authInstallApp = document.getElementById('auth-install-app');
+    const adminNavItem = document.getElementById('admin-nav-item');
 
     if (authInstallApp) authInstallApp.style.display = isAppStandalone() ? 'none' : '';
     if (crewSwitcher) crewSwitcher.classList.toggle('show', authUiSignedIn);
     if (notificationBell) notificationBell.classList.toggle('show', authUiSignedIn);
+    if (adminNavItem) adminNavItem.style.display = staffUser ? '' : 'none';
+    if (!staffUser && activeTabName() === 'admin') switchTab('home');
     if (!signedIn) {
       appData.notifications = [];
       closeNotificationsPanel();
@@ -3412,14 +3518,14 @@
     addMemberBtn.disabled = false;
     addMemberBtn.title = authUiSignedIn ? 'Set Up My Profile' : 'Sign in to set up your profile';
     addMemberBtn.setAttribute('aria-label', addMemberBtn.title);
-    addMeetBtn.disabled = !isAdmin;
-    addMeetBtn.style.display = isAdmin ? '' : 'none';
-    addMeetBtn.title = isAdmin ? 'Add Meet' : 'Admin only';
+    addMeetBtn.disabled = !meetManager;
+    addMeetBtn.style.display = meetManager ? '' : 'none';
+    addMeetBtn.title = meetManager ? 'Add Meet' : 'Owner/admin only';
     addMeetBtn.setAttribute('aria-label', addMeetBtn.title);
-    saveMeetBtn.disabled = !isAdmin;
+    saveMeetBtn.disabled = !meetManager;
     garageNote.classList.toggle('show', !authUiSignedIn);
-    meetNote.textContent = authUiSignedIn ? 'Admin only: creating and managing meets is limited to owners.' : 'Sign in as an admin to create a meet.';
-    meetNote.classList.toggle('show', !isAdmin);
+    meetNote.textContent = authUiSignedIn ? 'Owner/admin only: creating and managing meets is limited to staff.' : 'Sign in as an owner/admin to create a meet.';
+    meetNote.classList.toggle('show', !meetManager);
     if (cruiseStartBtn) {
       cruiseStartBtn.classList.toggle('dimmed', !authUiSignedIn);
       cruiseStartBtn.setAttribute('aria-disabled', String(!authUiSignedIn));
@@ -3431,15 +3537,15 @@
       addPhotoBtn.setAttribute('aria-label', addPhotoBtn.title);
     }
     if (addAnnBtn) {
-      addAnnBtn.disabled = !isAdmin;
-      addAnnBtn.style.display = isAdmin ? '' : 'none';
-      addAnnBtn.title = isAdmin ? 'Post Crew News' : 'Admin only';
+      addAnnBtn.disabled = !newsManager;
+      addAnnBtn.style.display = newsManager ? '' : 'none';
+      addAnnBtn.title = newsManager ? 'Post Crew News' : 'Owner/admin only';
       addAnnBtn.setAttribute('aria-label', addAnnBtn.title);
     }
 
     if (!canOpenSelectedGroupSettings()) closeCrewSettings();
 
-    if (!isAdmin) {
+    if (!meetManager) {
       document.getElementById('add-meet-form').classList.remove('open');
       document.getElementById('add-ann-form').classList.remove('open');
       clearMeetForm();
@@ -3469,7 +3575,8 @@
       meets: renderMeets,
       map: renderCheckins,
       photos: renderPhotos,
-      announce: renderAnnouncements
+      announce: renderAnnouncements,
+      admin: renderAdminPanel
     };
     const render = renders[activeTabName()];
     if (render) render();
@@ -3501,6 +3608,7 @@
           return;
         }
 
+        await loadCurrentUserRoles(false);
         await loadAllData(false, false);
         await refreshMemberCounts(false, { render: false, force: true });
         await fetchNotifications(false);
@@ -5174,7 +5282,8 @@
       meets:    renderMeets,
       map:      renderCheckins,
       photos:   renderPhotos,
-      announce: renderAnnouncements
+      announce: renderAnnouncements,
+      admin: renderAdminPanel
     };
     if (name === 'map') {
       refreshCheckins(false);
@@ -5808,7 +5917,7 @@
   document.getElementById('toggle-add-meet').addEventListener('click', async () => {
     const session = await getActiveMeetSession('Sign in to create a meet.');
     if (!session) return;
-    if (!requireAdminUser('Admin only: only owners can create meets.')) return;
+    if (!requireAdminUser('Owner/admin only: only staff can create meets.')) return;
 
     // Ensure we're in "create" mode
     document.getElementById('edit-meet-id').value = '';
@@ -5902,7 +6011,7 @@
   document.getElementById('save-meet-btn').addEventListener('click', async () => {
     const session = await getActiveMeetSession('Please sign in to save a meet.');
     if (!session) return;
-    if (!requireAdminUser('Admin only: only owners can save meets.')) return;
+    if (!requireAdminUser('Owner/admin only: only staff can save meets.')) return;
 
     const title = document.getElementById('meet-name').value.trim();
     const date  = document.getElementById('meet-date').value;
@@ -5946,7 +6055,7 @@
       if (editId) {
         const existing = meets.find(m => m.id === editId) || {};
         if (!currentUserIsAdmin()) {
-          toast('Admin only: only owners can save meet changes.');
+          toast('Owner/admin only: only staff can save meet changes.');
           return;
         }
         await updateRecord('meets', editId, { ...existing, ...meet, createdBy: meetOwnerId(existing), rsvp: existing.rsvp || emptyRsvpCounts(), myRsvp: existing.myRsvp || null, checkedIn: !!existing.checkedIn });
@@ -5982,7 +6091,7 @@
     const m = appData.meets.find(x => x.id === id);
     if (!m) return;
     if (!currentUserIsAdmin()) {
-      toast('Admin only: only owners can edit meets.');
+      toast('Owner/admin only: only staff can edit meets.');
       renderMeets();
       return;
     }
@@ -6007,7 +6116,7 @@
     if (!session) return;
     const m = appData.meets.find(x => x.id === id);
     if (!m || !currentUserIsAdmin()) {
-      toast('Admin only: only owners can delete meets.');
+      toast('Owner/admin only: only staff can delete meets.');
       renderMeets();
       return;
     }
@@ -6920,7 +7029,7 @@
     }
 
     const photo = (appData.photos || []).find(p => p.id === photoId);
-    if (!photo || photo.hidden_by_dislikes === true) {
+    if (!photo || photo.hidden_by_dislikes === true || photo.hidden_by_moderator === true) {
       toast('That photo is no longer available in the feed.');
       return;
     }
@@ -7442,6 +7551,211 @@ ${JSON.stringify({
 
 
   // ==============================================================
+  // 9. ADMIN PANEL
+  // ==============================================================
+
+  function roleForUser(userId) {
+    if (!userId) return '';
+    return strongestRole((appData.userRoles || []).filter(row => row.user_id === userId));
+  }
+
+  function roleLabel(role) {
+    return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member';
+  }
+
+  function adminUserRows() {
+    const byUser = new Map();
+    (appData.members || []).forEach(member => {
+      if (!member || !member.user_id) return;
+      byUser.set(member.user_id, {
+        user_id: member.user_id,
+        name: cleanDisplayName(member.name, 'CruiseCrew member'),
+        email: member.email || (member.user_id === currentUserId() ? currentUserEmail() : ''),
+        joined: member.created_at || '',
+        role: roleForUser(member.user_id)
+      });
+    });
+    (appData.userRoles || []).forEach(roleRow => {
+      if (!roleRow || !roleRow.user_id || byUser.has(roleRow.user_id)) return;
+      byUser.set(roleRow.user_id, {
+        user_id: roleRow.user_id,
+        name: roleRow.user_id === currentUserId() ? authUserDisplayName(appData.currentUser) : 'CruiseCrew member',
+        email: roleRow.user_id === currentUserId() ? currentUserEmail() : '',
+        joined: roleRow.created_at || '',
+        role: roleForUser(roleRow.user_id)
+      });
+    });
+    return [...byUser.values()].sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name));
+  }
+
+  function renderUserManagementSection() {
+    if (!canManageRoles()) return '';
+    const users = adminUserRows();
+    const rows = users.length ? users.map(user => {
+      const role = user.role || '';
+      const isOwnerRole = role === 'owner';
+      const controls = isOwnerRole ? '<div class="admin-row-meta">Owner cannot be demoted in the app UI.</div>' : `
+        <div class="admin-actions">
+          <button class="btn-sm-ghost" type="button" onclick="setUserRole('${esc(user.user_id)}','moderator')" ${role === 'moderator' ? 'disabled' : ''}>Make Moderator</button>
+          <button class="btn-sm-ghost" type="button" onclick="setUserRole('${esc(user.user_id)}','admin')" ${role === 'admin' ? 'disabled' : ''}>Make Admin</button>
+          ${role ? `<button class="btn-sm-ghost btn-sm-del" type="button" onclick="removeUserRole('${esc(user.user_id)}','${esc(role)}')">Remove Role</button>` : ''}
+        </div>`;
+      return `<div class="admin-row">
+        <div class="admin-row-main">
+          <div class="admin-row-title">${memberProfileButton(user.user_id, user.name)}</div>
+          <div class="admin-row-meta">${user.email ? esc(user.email) : 'Email unavailable'}${user.joined ? ` · Joined ${esc(formatActivityTime(activityDate(user, user.joined)))}` : ''}</div>
+          <span class="admin-role-pill">${esc(roleLabel(role))}</span>
+        </div>
+        ${controls}
+      </div>`;
+    }).join('') : '<div class="empty"><div class="empty-title">No users found</div><div class="empty-sub">Users appear here after they create a garage profile or receive a role.</div></div>';
+    return `<section class="admin-section">
+      <div class="admin-section-head"><div class="admin-section-title">User Management</div><div class="admin-section-sub">Owner only. Promote users to admin or moderator, or remove elevated roles.</div></div>
+      <div class="admin-list">${rows}</div>
+    </section>`;
+  }
+
+  function renderPhotoModerationSection() {
+    if (!canManagePhotos()) return '';
+    const photos = [...(appData.photos || [])].sort((a, b) => activityDate(b, b.date) - activityDate(a, a.date)).slice(0, 30);
+    const rows = photos.length ? photos.map(photo => {
+      const hidden = photo.hidden_by_moderator === true || photo.hidden_by_dislikes === true;
+      const status = photo.hidden_by_moderator === true ? 'Hidden by staff' : (photo.hidden_by_dislikes === true ? 'Hidden by dislikes' : 'Visible');
+      return `<div class="admin-row admin-photo-row">
+        ${photo.image_url ? `<img class="admin-photo-img" src="${esc(photo.image_url)}" alt="${esc(photoCaption(photo) || 'Moderation photo')}" loading="lazy">` : '<div class="photo-thumb" role="img" aria-label="Photo unavailable">📸</div>'}
+        <div class="admin-row-main">
+          <div class="admin-row-title">${esc(photoDropContext(photo))}</div>
+          <div class="admin-row-meta">${memberProfileButton(photoProfileUserId(photo), photoPosterName(photo))} · ${esc(formatActivityTime(activityDate(photo, photo.date)))}</div>
+          ${photoCaption(photo) ? `<div class="admin-row-meta">${esc(photoCaption(photo))}</div>` : ''}
+          <div class="admin-row-meta">👍 ${Number(photo.like_count || 0)} · 👎 ${Number(photo.dislike_count || 0)} · <span class="${hidden ? 'admin-hidden-note' : ''}">${esc(status)}</span></div>
+        </div>
+        <div class="admin-actions">
+          ${photo.hidden_by_moderator === true ? `<button class="btn-sm-ghost" type="button" onclick="moderatePhoto('${esc(photo.id)}', false)">Unhide</button>` : `<button class="btn-sm-ghost btn-sm-del" type="button" onclick="moderatePhoto('${esc(photo.id)}', true)">Hide</button>`}
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty"><div class="empty-title">No photo drops yet</div><div class="empty-sub">Recent uploads will show here for moderation.</div></div>';
+    return `<section class="admin-section">
+      <div class="admin-section-head"><div class="admin-section-title">Photo Moderation</div><div class="admin-section-sub">Owner, admin, and moderator. Hide or unhide photos without deleting storage files.</div></div>
+      <div class="admin-list">${rows}</div>
+    </section>`;
+  }
+
+  function renderMeetsManagementSection() {
+    if (!canManageMeets()) return '';
+    const meets = [...(appData.meets || [])].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 12);
+    const rows = meets.length ? meets.map(meet => `<div class="admin-row">
+      <div class="admin-row-main"><div class="admin-row-title">${esc(meet.title)}</div><div class="admin-row-meta">${esc(fmtDate(meet.date))} ${esc(fmtTime(meet.time))} · ${esc(meet.location || '')}</div></div>
+      <div class="admin-actions"><button class="btn-sm-ghost" type="button" onclick="editMeet('${esc(meet.id)}')">Edit</button><button class="btn-sm-ghost btn-sm-del" type="button" onclick="deleteMeet('${esc(meet.id)}')">Delete</button></div>
+    </div>`).join('') : '<div class="empty"><div class="empty-title">No meets yet</div><div class="empty-sub">Create the first meet from the Meets tab.</div></div>';
+    return `<section class="admin-section">
+      <div class="admin-section-head"><div class="admin-section-title">Meets Management</div><div class="admin-section-sub">Owner/admin only. Reuses the existing meet editor and keeps RSVP behavior intact.</div></div>
+      <div class="admin-list"><div class="admin-actions"><button class="btn-primary" type="button" onclick="openAdminCreateMeet()">Create Meet</button></div>${rows}</div>
+    </section>`;
+  }
+
+  function renderNewsManagementSection() {
+    if (!canManageNews()) return '';
+    const anns = [...(appData.announcements || [])].sort((a, b) => activityDate(b, b.created_at || b.date) - activityDate(a, a.created_at || a.date)).slice(0, 12);
+    const rows = anns.length ? anns.map(ann => `<div class="admin-row">
+      <div class="admin-row-main"><div class="admin-row-title">${esc(ann.title)}</div><div class="admin-row-meta">${esc(fmtDate(ann.date))} · ${esc(ann.type || 'info')} · ${esc(ann.author || 'Admin')}</div></div>
+      <div class="admin-actions"><button class="btn-sm-ghost btn-sm-del" type="button" onclick="deleteAnn('${esc(ann.id)}')">Delete</button></div>
+    </div>`).join('') : '<div class="empty"><div class="empty-title">No news posts yet</div><div class="empty-sub">Create the first update from the News tab.</div></div>';
+    return `<section class="admin-section">
+      <div class="admin-section-head"><div class="admin-section-title">News Management</div><div class="admin-section-sub">Owner/admin only. Create news with the existing post form; delete posts here.</div></div>
+      <div class="admin-list"><div class="admin-actions"><button class="btn-primary" type="button" onclick="openAdminCreateNews()">Create News Post</button></div>${rows}</div>
+    </section>`;
+  }
+
+  function renderAdminPanel() {
+    const panel = document.getElementById('admin-panel');
+    const summary = document.getElementById('admin-role-summary');
+    if (!panel) return;
+    if (summary) summary.textContent = `Signed in as ${currentUserRoleLabel()}.`;
+    if (!canManagePhotos()) {
+      panel.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div><div class="empty-title">No admin access</div><div class="empty-sub">Owner, admin, or moderator role required.</div></div>';
+      return;
+    }
+    panel.innerHTML = [
+      renderUserManagementSection(),
+      renderPhotoModerationSection(),
+      renderMeetsManagementSection(),
+      renderNewsManagementSection()
+    ].filter(Boolean).join('');
+  }
+
+  async function setUserRole(userId, role) {
+    if (!canManageRoles() || !['admin', 'moderator'].includes(role)) return toast('Owner only: role management is restricted.');
+    if (userId === currentUserId()) return toast('You cannot promote yourself.');
+    if (roleForUser(userId) === 'owner') return toast('Owner role cannot be changed in the app.');
+    if (!confirm(`Make this user ${roleLabel(role)}?`)) return;
+    try {
+      await supabaseClient.from('user_roles').delete().eq('user_id', userId).in('role', ['admin', 'moderator']);
+      const { error } = await supabaseClient.from('user_roles').insert([{ user_id: userId, role, created_by: currentUserId() }]);
+      if (error) throw error;
+      await loadCurrentUserRoles(true);
+      renderAdminPanel();
+      toast(`User is now ${roleLabel(role)}.`);
+    } catch (err) {
+      toast(`Could not update role: ${err.message}`);
+    }
+  }
+
+  async function removeUserRole(userId, role) {
+    if (!canManageRoles()) return toast('Owner only: role management is restricted.');
+    if (userId === currentUserId()) return toast('You cannot remove your own role.');
+    if (role === 'owner') return toast('Owner role cannot be removed in the app.');
+    if (!['admin', 'moderator'].includes(role)) return;
+    if (!confirm(`Remove ${roleLabel(role)} role from this user?`)) return;
+    try {
+      const { error } = await supabaseClient.from('user_roles').delete().eq('user_id', userId).eq('role', role);
+      if (error) throw error;
+      await loadCurrentUserRoles(true);
+      renderAdminPanel();
+      toast('Role removed.');
+    } catch (err) {
+      toast(`Could not remove role: ${err.message}`);
+    }
+  }
+
+  async function moderatePhoto(photoId, hide) {
+    if (!requirePhotoManager()) return;
+    const photo = (appData.photos || []).find(p => p.id === photoId);
+    if (!photo) return;
+    if (!confirm(hide ? 'Hide this photo from the public feed?' : 'Unhide this photo in the public feed?')) return;
+    try {
+      const patch = hide
+        ? { hidden_by_moderator: true, hidden_by_moderator_at: new Date().toISOString(), hidden_by_moderator_user_id: currentUserId() }
+        : { hidden_by_moderator: false, hidden_by_moderator_at: null, hidden_by_moderator_user_id: null };
+      const { error } = await supabaseClient.from('photo_drops').update(patch).eq('id', photoId);
+      if (error) throw error;
+      await loadKind('photos', false);
+      renderPhotos();
+      renderHome();
+      renderAdminPanel();
+      toast(hide ? 'Photo hidden from public feed.' : 'Photo unhidden.');
+    } catch (err) {
+      toast(`Could not moderate photo: ${err.message}`);
+    }
+  }
+
+  function openAdminCreateMeet() {
+    switchTab('meets');
+    document.getElementById('toggle-add-meet').click();
+  }
+
+  function openAdminCreateNews() {
+    switchTab('announce');
+    document.getElementById('toggle-add-ann').click();
+  }
+
+  window.setUserRole = setUserRole;
+  window.removeUserRole = removeUserRole;
+  window.moderatePhoto = moderatePhoto;
+  window.openAdminCreateMeet = openAdminCreateMeet;
+  window.openAdminCreateNews = openAdminCreateNews;
+
+
+  // ==============================================================
   // 9. ANNOUNCEMENTS
   // ==============================================================
 
@@ -7469,7 +7783,7 @@ ${JSON.stringify({
         </div>
         <div class="ann-ftr">
           <span>Posted by <strong>${esc(a.author)}</strong></span>
-          ${currentUserIsAdmin() ? `<button class="ann-ftr-del" onclick="deleteAnn('${a.id}')">🗑 Remove</button>` : ''}
+          ${canManageNews() ? `<button class="ann-ftr-del" onclick="deleteAnn('${a.id}')">🗑 Remove</button>` : ''}
         </div>
       </div>`).join('');
   }
@@ -7497,7 +7811,7 @@ ${JSON.stringify({
       promptSignIn('Sign in as an admin to post news.');
       return;
     }
-    if (!requireAdminUser('Admin only: only owners can post crew news.')) {
+    if (!requireAdminUser('Owner/admin only: only staff can post crew news.')) {
       setAnnStatus('error', 'You are signed in, but this account is not allowed to post crew news.');
       return;
     }
@@ -7518,7 +7832,7 @@ ${JSON.stringify({
       promptSignIn('Sign in as an admin to post news.');
       return;
     }
-    if (!requireAdminUser('Admin only: only owners can post crew news.')) {
+    if (!requireAdminUser('Owner/admin only: only staff can post crew news.')) {
       setAnnStatus('error', 'You are signed in, but this account is not allowed to post crew news.');
       return;
     }
@@ -7566,7 +7880,7 @@ ${JSON.stringify({
       promptSignIn('Sign in as an admin to remove crew news.');
       return;
     }
-    if (!requireAdminUser('Admin only: only owners can remove crew news.')) return;
+    if (!requireAdminUser('Owner/admin only: only staff can remove crew news.')) return;
     if (!confirm('Delete this announcement?')) return;
     try {
       await deleteRecord('announcements', id);
@@ -7834,6 +8148,7 @@ ${JSON.stringify({
       handlingPasswordRecovery = await handlePasswordRecoveryUrl();
       await loadCurrentSession();
       await loadCurrentUser();
+      await loadCurrentUserRoles(false);
       await loadAllData(true, false);
       initMemberCountRefreshers();
       setupNotificationsRealtime();
