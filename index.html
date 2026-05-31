@@ -11,6 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#0A0A0C">
+  <meta name="cruisecrew-app-version" content="0.0.2">
 
   <!-- Google Fonts: Barlow Condensed (automotive/display) + DM Sans (body) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2255,9 +2256,11 @@
   // Keep this list in sync with the matching admin email list in supabase/schema.sql.
   const ADMIN_EMAILS = ["chancecampbell97@live.com"];
 
-  // App version is manually controlled here and in /version.json.
-  const APP_VERSION = '0.0.1';
+  // Loaded app version comes from the single index.html meta tag so the
+  // footer and update checker cannot drift from the HTML bundle in use.
   const VERSION_URL = '/version.json';
+  const APP_VERSION_META = document.querySelector('meta[name="cruisecrew-app-version"]');
+  const APP_VERSION = (APP_VERSION_META?.content || '').trim().replace(/^v/i, '');
   const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
   const APP_VERSION_PENDING_KEY = 'cruisecrew_pending_refresh_version';
   const APP_CONTROLLER_RELOAD_KEY = 'cruisecrew_controller_reload_at';

@@ -72,8 +72,13 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
 
-  if (isNavigationRequest(request) || shouldAlwaysFetchFresh(url)) {
+  if (isNavigationRequest(request)) {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => caches.match('/index.html')));
+    return;
+  }
+
+  if (shouldAlwaysFetchFresh(url)) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
     return;
   }
 
