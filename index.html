@@ -1532,7 +1532,7 @@
 
   <!-- Toast notification (auto-show/hide) -->
   <div class="toast" id="toast"></div>
-  <button class="update-banner" id="update-banner" type="button">New CruiseCrew update available. Tap to refresh.</button>
+  <button class="update-banner" id="update-banner" type="button">Update available — tap to refresh</button>
 
   <!-- Phase 1 in-app notifications only. This is not phone push notification support yet. -->
   <div class="notification-panel" id="notification-panel" role="dialog" aria-modal="false" aria-label="In-app notifications">
@@ -2269,6 +2269,8 @@
   let serviceWorkerRegistration = null;
   let expectingControllerReload = false;
   let refreshingForControllerChange = false;
+  let versionCheckInFlight = false;
+  let updateReloadStarted = false;
 
   // Helper: date string N days from today
   function futureDate(n) {
@@ -7466,6 +7468,19 @@ ${JSON.stringify({
     return clean ? `v${clean}` : '';
   }
 
+  function compareVersionValues(a, b) {
+    const aParts = normalizeVersionValue(a).split('.').map(part => Number.parseInt(part, 10));
+    const bParts = normalizeVersionValue(b).split('.').map(part => Number.parseInt(part, 10));
+    const numeric = aParts.every(Number.isFinite) && bParts.every(Number.isFinite);
+    if (!numeric) return normalizeVersionValue(a) === normalizeVersionValue(b) ? 0 : 1;
+    const length = Math.max(aParts.length, bParts.length);
+    for (let i = 0; i < length; i += 1) {
+      const diff = (aParts[i] || 0) - (bParts[i] || 0);
+      if (diff) return diff;
+    }
+    return 0;
+  }
+
   function setVersionFooter(version) {
     const el = document.getElementById('app-version-footer');
     if (el) el.textContent = `CruiseCrew ${formatAppVersion(version) || ''}`.trim();
@@ -7483,21 +7498,24 @@ ${JSON.stringify({
     if (updateBannerVisible) return;
     const banner = document.getElementById('update-banner');
     if (!banner) return;
-    banner.textContent = `New CruiseCrew update available. Tap to refresh.`;
+    banner.textContent = `Update available — tap to refresh`;
     banner.classList.add('show');
     updateBannerVisible = true;
-    console.log('Update banner shown', { loadedAppVersion, remoteVersion: version });
+    console.log('CruiseCrew update detected', { loadedAppVersion, remoteVersion: version });
   }
 
   async function clearOldAppCaches() {
-    if (!('caches' in window)) return;
+    if (!('caches' in window)) {
+      console.log('CruiseCrew cache cleared', { supported: false });
+      return;
+    }
     const currentCacheName = `cruisecrew-cache-${latestRemoteVersion || loadedAppVersion || 'unversioned'}`;
     const keys = await caches.keys();
-    await Promise.all(keys
-      .filter(key => key.startsWith('cruisecrew-cache-') && key !== currentCacheName)
-      .map(key => caches.delete(key).then(deleted => {
-        if (deleted) console.log('CruiseCrew old cache deleted', key);
-      })));
+    const oldCacheKeys = keys.filter(key => key.startsWith('cruisecrew-cache-') && key !== currentCacheName);
+    await Promise.all(oldCacheKeys.map(key => caches.delete(key).then(deleted => {
+      if (deleted) console.log('CruiseCrew old cache deleted', key);
+    })));
+    console.log('CruiseCrew cache cleared', { deleted: oldCacheKeys.length, kept: currentCacheName });
   }
 
   function sendSkipWaitingToServiceWorker() {
@@ -7509,6 +7527,8 @@ ${JSON.stringify({
   }
 
   async function refreshForUpdate() {
+    if (updateReloadStarted) return;
+    updateReloadStarted = true;
     console.log('CruiseCrew update refresh requested', { remoteVersion: latestRemoteVersion });
     try {
       if (latestRemoteVersion) localStorage.setItem(APP_VERSION_PENDING_KEY, latestRemoteVersion);
@@ -7520,18 +7540,25 @@ ${JSON.stringify({
       }
       if (skipWaitingSent) {
         window.setTimeout(() => {
-          if (!refreshingForControllerChange) window.location.reload();
+          if (!refreshingForControllerChange) {
+            console.log('CruiseCrew reload triggered');
+            window.location.reload();
+          }
         }, 1500);
       } else {
+        console.log('CruiseCrew reload triggered');
         window.location.reload();
       }
     } catch (err) {
       console.warn('CruiseCrew update cleanup failed before reload', err);
+      console.log('CruiseCrew reload triggered');
       window.location.reload();
     }
   }
 
   async function checkForAppUpdate({ initial = false } = {}) {
+    if (versionCheckInFlight) return;
+    versionCheckInFlight = true;
     try {
       console.log('Checking CruiseCrew app version…');
       if ('serviceWorker' in navigator) {
@@ -7544,11 +7571,11 @@ ${JSON.stringify({
       const remoteVersion = await fetchRemoteVersion();
       latestRemoteVersion = remoteVersion;
       loadedAppVersion = normalizeVersionValue(APP_VERSION);
-      console.log(`Current version: ${loadedAppVersion}`);
-      console.log(`Remote version: ${remoteVersion}`);
+      console.log(`Current loaded version: ${loadedAppVersion}`);
+      console.log(`Remote/live version: ${remoteVersion}`);
       setVersionFooter(loadedAppVersion);
-      if (remoteVersion && remoteVersion !== loadedAppVersion) {
-        console.log('Version mismatch detected', { loadedAppVersion, remoteVersion });
+      if (remoteVersion && compareVersionValues(remoteVersion, loadedAppVersion) > 0) {
+        console.log('CruiseCrew update detected', { loadedAppVersion, remoteVersion });
         showUpdateBanner(remoteVersion);
       } else {
         localStorage.removeItem(APP_VERSION_PENDING_KEY);
@@ -7557,6 +7584,8 @@ ${JSON.stringify({
     } catch (err) {
       console.warn('CruiseCrew version check failed', err);
       if (initial && loadedAppVersion) setVersionFooter(loadedAppVersion);
+    } finally {
+      versionCheckInFlight = false;
     }
   }
 
@@ -7574,6 +7603,7 @@ ${JSON.stringify({
       if (document.visibilityState === 'visible') checkForAppUpdate();
     });
     window.addEventListener('focus', () => checkForAppUpdate());
+    window.addEventListener('pageshow', () => checkForAppUpdate());
     window.setInterval(() => checkForAppUpdate(), VERSION_CHECK_INTERVAL_MS);
   }
 
@@ -7612,7 +7642,7 @@ ${JSON.stringify({
       if (now - lastReload < 10000) return;
       refreshingForControllerChange = true;
       sessionStorage.setItem(APP_CONTROLLER_RELOAD_KEY, String(now));
-      console.log('Controller changed, reloading');
+      console.log('CruiseCrew reload triggered');
       window.location.reload();
     });
   }
