@@ -1144,8 +1144,9 @@
     .meet-popup-meta { color: var(--text-3); font-size: 0.78rem; line-height: 1.45; margin-bottom: 8px; }
     .meet-popup-counts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; color: var(--text-2); font-size: 0.74rem; }
     .meet-popup-btn {
-      border: 0; border-radius: 999px; padding: 8px 10px; width: 100%; cursor: pointer;
+      display: block; border: 0; border-radius: 999px; padding: 8px 10px; width: 100%; cursor: pointer;
       background: var(--accent); color: #fff; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em;
+      text-align: center; text-decoration: none;
     }
     .no-location-list { display: grid; gap: 10px; margin-bottom: 16px; }
     .no-location-item { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; background: var(--bg-card); }
@@ -2788,15 +2789,33 @@
     );
   }
 
-  function openMapsForLocation(locationData) {
+  function mapUrlForLocation(locationData) {
     const coords = validMapCoordinates(locationData && locationData.latitude, locationData && locationData.longitude);
     const query = coords ? `${coords.latitude},${coords.longitude}` : mapLocationText(locationData);
     if (!query) {
+      console.warn('CruiseCrew map URL could not be generated: missing address/lat/lng.', locationData || null);
+      return '';
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  }
+
+  function openMapLink(url) {
+    if (!url) {
+      console.warn('CruiseCrew map link could not be opened: missing map URL.');
       toast('No map location available.');
       return;
     }
-    const encodedQuery = coords ? query : encodeURIComponent(query);
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodedQuery}`, '_blank', 'noopener,noreferrer');
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) window.location.href = url;
+  }
+
+  function openMapsForLocation(locationData) {
+    const url = mapUrlForLocation(locationData);
+    if (!url) {
+      toast('No map location available.');
+      return;
+    }
+    openMapLink(url);
   }
 
   function openMapsForMeet(meetId) {
@@ -2811,13 +2830,22 @@
 
   function meetMapLink(meet) {
     const label = meetLocationLabel(meet);
-    if (!label) return '';
-    return `<span class="map-link" title="Meet map location">📍 <span>${esc(label)}</span></span>`;
+    const url = mapUrlForLocation(meet);
+    if (!label || !url) return '';
+    return `<a class="map-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open meet map location" onclick="event.stopPropagation(); openMapLink(this.href); return false;">📍 <span>${esc(label)}</span></a>`;
   }
 
   function checkinMapLink(checkin) {
     const label = mapLocationText(checkin) || 'Cruise spot shared';
-    return `<span class="map-link" title="Cruise spot map location">📍 <span>${esc(label)}</span></span>`;
+    const url = mapUrlForLocation(checkin);
+    if (!url) return '';
+    return `<a class="map-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open cruise spot map location" onclick="event.stopPropagation(); openMapLink(this.href); return false;">📍 <span>${esc(label)}</span></a>`;
+  }
+
+  function mapButtonLink(locationData) {
+    const url = mapUrlForLocation(locationData);
+    if (!url) return '';
+    return `<a class="meet-popup-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation(); openMapLink(this.href); return false;">Open in Maps</a>`;
   }
 
   function upcomingMeetTime(meet) {
@@ -6035,6 +6063,8 @@
   window.deleteMeet = deleteMeet;
   window.setRsvp   = setRsvp;
   window.checkIn   = checkIn;
+  window.mapUrlForLocation = mapUrlForLocation;
+  window.openMapLink = openMapLink;
   window.openMapsForLocation = openMapsForLocation;
   window.openMapsForMeet = openMapsForMeet;
   window.openMapsForCheckin = openMapsForCheckin;
@@ -6304,7 +6334,7 @@
       <div class="meet-popup-title">${esc(meet.title)}</div>
       <div class="meet-popup-meta">📅 ${esc(fmtDate(meet.date))}${meet.time ? ` · ${esc(fmtTime(meet.time))}` : ''}<br>${meetMapLink(meet)}</div>
       <div class="meet-popup-counts"><span>${counts.going} Going</span><span>${counts.maybe} Maybe</span><span>${counts.not_going} Can't go</span></div>
-      <button class="meet-popup-btn" type="button" onclick="event.stopPropagation(); openMapsForMeet('${esc(meet.id)}')">Open in Maps</button>
+      ${mapButtonLink(meet)}
       <button class="meet-popup-btn" type="button" style="margin-top:6px;background:transparent;border:1px solid var(--accent-border);color:var(--accent)" onclick="viewMeetFromMap('${meet.id}')">View meet</button>
     </div>`;
   }
@@ -6322,7 +6352,7 @@
       ${checkin.note ? `<div class="meet-popup-meta">${esc(checkin.note)}</div>` : ''}
       ${meetTitle ? `<div class="meet-popup-meta">Meet: ${esc(meetTitle)}</div>` : ''}
       <div class="meet-popup-counts"><span>⏱ ${esc(checkinExpiresText(checkin.expires_at))} remaining</span></div>
-      <button class="meet-popup-btn" type="button" onclick="event.stopPropagation(); openMapsForCheckin('${esc(checkin.id)}')">Open in Maps</button>
+      ${mapButtonLink(checkin)}
     </div>`;
   }
 
