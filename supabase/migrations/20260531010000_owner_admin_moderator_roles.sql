@@ -7,10 +7,29 @@ create table if not exists public.user_roles (
   role text not null check (role in ('owner', 'admin', 'moderator')),
   created_at timestamptz not null default now(),
   created_by uuid references auth.users(id),
-  unique(user_id, role)
+  unique(user_id)
 );
 
-create index if not exists user_roles_user_id_idx on public.user_roles(user_id);
+-- If an earlier version allowed multiple roles per user, keep the highest role.
+with ranked_roles as (
+  select
+    id,
+    row_number() over (
+      partition by user_id
+      order by case role when 'owner' then 3 when 'admin' then 2 when 'moderator' then 1 else 0 end desc,
+               created_at asc,
+               id asc
+    ) as role_rank
+  from public.user_roles
+)
+delete from public.user_roles ur
+using ranked_roles rr
+where ur.id = rr.id
+  and rr.role_rank > 1;
+
+alter table public.user_roles drop constraint if exists user_roles_user_id_role_key;
+drop index if exists public.user_roles_user_id_role_key;
+create unique index if not exists user_roles_user_id_key on public.user_roles(user_id);
 create index if not exists user_roles_role_idx on public.user_roles(role);
 
 alter table public.photo_drops add column if not exists hidden_by_moderator boolean not null default false;
@@ -44,9 +63,8 @@ as $$
   select public.has_app_role('owner');
 $$;
 
--- Replaces the previous email-only helper. The legacy owner email remains an
--- admin fallback so existing deployments do not lose access before owner role
--- rows are inserted.
+-- Temporary email fallback preserves current access until the owner role is
+-- inserted and tested. Remove this email fallback after that verification.
 create or replace function public.is_admin_user()
 returns boolean
 language sql
@@ -109,6 +127,99 @@ as $$
   select public.is_owner_user();
 $$;
 
+create or replace function public.set_user_app_role(target_user_id uuid, new_role text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required to manage roles';
+  end if;
+
+  if not public.can_manage_roles() then
+    raise exception 'Only the owner can manage app roles';
+  end if;
+
+  if target_user_id = auth.uid() then
+    raise exception 'You cannot change your own app role';
+  end if;
+
+  if new_role not in ('admin', 'moderator') then
+    raise exception 'App role must be admin or moderator';
+  end if;
+
+  if exists (select 1 from public.user_roles where user_id = target_user_id and role = 'owner') then
+    raise exception 'The owner role cannot be changed through the app';
+  end if;
+
+  insert into public.user_roles (user_id, role, created_by)
+  values (target_user_id, new_role, auth.uid())
+  on conflict (user_id) do update
+    set role = excluded.role,
+        created_by = excluded.created_by,
+        created_at = now()
+    where public.user_roles.role <> 'owner';
+end;
+$$;
+
+create or replace function public.remove_user_app_role(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required to manage roles';
+  end if;
+
+  if not public.can_manage_roles() then
+    raise exception 'Only the owner can manage app roles';
+  end if;
+
+  if target_user_id = auth.uid() then
+    raise exception 'You cannot remove your own app role';
+  end if;
+
+  if exists (select 1 from public.user_roles where user_id = target_user_id and role = 'owner') then
+    raise exception 'The owner role cannot be removed through the app';
+  end if;
+
+  delete from public.user_roles
+  where user_id = target_user_id
+    and role in ('admin', 'moderator');
+end;
+$$;
+
+create or replace function public.moderate_photo_drop(target_photo_id uuid, should_hide boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required to moderate photos';
+  end if;
+
+  if not public.can_manage_photos() then
+    raise exception 'Only owner, admin, or moderator can moderate photos';
+  end if;
+
+  update public.photo_drops
+  set hidden_by_moderator = should_hide,
+      hidden_by_moderator_at = case when should_hide then now() else null end,
+      hidden_by_moderator_user_id = case when should_hide then auth.uid() else null end
+  where id = target_photo_id;
+
+  if not found then
+    raise exception 'Photo drop not found';
+  end if;
+end;
+$$;
+
 grant execute on function public.has_app_role(text) to authenticated;
 grant execute on function public.is_owner_user() to authenticated;
 grant execute on function public.is_admin_user() to authenticated;
@@ -117,6 +228,9 @@ grant execute on function public.can_manage_photos() to authenticated;
 grant execute on function public.can_manage_meets() to authenticated;
 grant execute on function public.can_manage_news() to authenticated;
 grant execute on function public.can_manage_roles() to authenticated;
+grant execute on function public.set_user_app_role(uuid, text) to authenticated;
+grant execute on function public.remove_user_app_role(uuid) to authenticated;
+grant execute on function public.moderate_photo_drop(uuid, boolean) to authenticated;
 
 alter table public.user_roles enable row level security;
 
@@ -129,19 +243,6 @@ create policy "users can read own role" on public.user_roles
   for select to authenticated using (auth.uid() = user_id);
 create policy "owner can read all roles" on public.user_roles
   for select to authenticated using (public.can_manage_roles());
-create policy "owner can assign admin moderator roles" on public.user_roles
-  for insert to authenticated with check (
-    public.can_manage_roles()
-    and auth.uid() is distinct from user_id
-    and created_by = auth.uid()
-    and role in ('admin', 'moderator')
-  );
-create policy "owner can remove admin moderator roles" on public.user_roles
-  for delete to authenticated using (
-    public.can_manage_roles()
-    and auth.uid() is distinct from user_id
-    and role in ('admin', 'moderator')
-  );
 
 -- Meets/news management follows app roles instead of frontend-only email checks.
 drop policy if exists "admins can insert meets" on public.meets;
@@ -166,15 +267,16 @@ create policy "admins can delete global announcements" on public.announcements
 
 -- Hidden photos remain in database/storage but are removed from the public feed.
 drop policy if exists "anon and authenticated can read photo drops" on public.photo_drops;
+drop policy if exists "anon and authenticated can read visible photo drops" on public.photo_drops;
+drop policy if exists "users can read own hidden photo drops" on public.photo_drops;
+drop policy if exists "staff can read hidden photo drops" on public.photo_drops;
 drop policy if exists "staff can moderate photo drops" on public.photo_drops;
-create policy "anon and authenticated can read photo drops" on public.photo_drops
+create policy "anon and authenticated can read visible photo drops" on public.photo_drops
   for select to anon, authenticated using (
-    (
-      hidden_by_dislikes is not true
-      and hidden_by_moderator is not true
-    )
-    or auth.uid() = user_id
-    or public.can_manage_photos()
+    hidden_by_dislikes is not true
+    and hidden_by_moderator is not true
   );
-create policy "staff can moderate photo drops" on public.photo_drops
-  for update to authenticated using (public.can_manage_photos()) with check (public.can_manage_photos());
+create policy "users can read own hidden photo drops" on public.photo_drops
+  for select to authenticated using (auth.uid() = user_id);
+create policy "staff can read hidden photo drops" on public.photo_drops
+  for select to authenticated using (public.can_manage_photos());

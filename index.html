@@ -7689,8 +7689,7 @@ ${JSON.stringify({
     if (roleForUser(userId) === 'owner') return toast('Owner role cannot be changed in the app.');
     if (!confirm(`Make this user ${roleLabel(role)}?`)) return;
     try {
-      await supabaseClient.from('user_roles').delete().eq('user_id', userId).in('role', ['admin', 'moderator']);
-      const { error } = await supabaseClient.from('user_roles').insert([{ user_id: userId, role, created_by: currentUserId() }]);
+      const { error } = await supabaseClient.rpc('set_user_app_role', { target_user_id: userId, new_role: role });
       if (error) throw error;
       await loadCurrentUserRoles(true);
       renderAdminPanel();
@@ -7707,7 +7706,7 @@ ${JSON.stringify({
     if (!['admin', 'moderator'].includes(role)) return;
     if (!confirm(`Remove ${roleLabel(role)} role from this user?`)) return;
     try {
-      const { error } = await supabaseClient.from('user_roles').delete().eq('user_id', userId).eq('role', role);
+      const { error } = await supabaseClient.rpc('remove_user_app_role', { target_user_id: userId });
       if (error) throw error;
       await loadCurrentUserRoles(true);
       renderAdminPanel();
@@ -7723,10 +7722,7 @@ ${JSON.stringify({
     if (!photo) return;
     if (!confirm(hide ? 'Hide this photo from the public feed?' : 'Unhide this photo in the public feed?')) return;
     try {
-      const patch = hide
-        ? { hidden_by_moderator: true, hidden_by_moderator_at: new Date().toISOString(), hidden_by_moderator_user_id: currentUserId() }
-        : { hidden_by_moderator: false, hidden_by_moderator_at: null, hidden_by_moderator_user_id: null };
-      const { error } = await supabaseClient.from('photo_drops').update(patch).eq('id', photoId);
+      const { error } = await supabaseClient.rpc('moderate_photo_drop', { target_photo_id: photoId, should_hide: hide });
       if (error) throw error;
       await loadKind('photos', false);
       renderPhotos();
