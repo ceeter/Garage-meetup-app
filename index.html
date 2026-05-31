@@ -1258,6 +1258,26 @@
     .photo-meta-main { min-width: 0; }
     .photo-author { color: var(--text-2); font-weight: 600; }
     .photo-car { color: var(--text-3); }
+    .photo-reactions {
+      display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+      margin-top: 9px;
+    }
+    .photo-react-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      min-height: 34px; padding: 7px 10px;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: rgba(255,255,255,0.03); color: var(--text-2);
+      font-family: var(--f-display); font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      touch-action: manipulation; transition: all 0.15s;
+    }
+    .photo-react-btn:hover { border-color: var(--accent-border); color: var(--accent); }
+    .photo-react-btn.active {
+      background: var(--accent-lo); border-color: var(--accent-border); color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(232,68,26,0.08) inset;
+    }
+    .photo-react-btn.dislike.active { border-color: rgba(255,77,77,0.42); color: var(--red); background: rgba(255,77,77,0.08); }
+    .photo-react-btn:disabled { opacity: 0.55; cursor: wait; }
     .photo-del {
       background: none; border: none; cursor: pointer;
       color: var(--red); font-size: 0.72rem; opacity: 0.5;
@@ -2566,7 +2586,7 @@
     photos: {
       table: 'photo_drops',
       order: 'created_at',
-      select: 'id, group_id, meet_id, user_id, member_id, image_url, storage_path, caption, display_name, car_label, spot_label, created_at',
+      select: 'id, group_id, meet_id, user_id, member_id, image_url, storage_path, caption, display_name, car_label, spot_label, like_count, dislike_count, hidden_by_dislikes, hidden_at, created_at',
       toDb: p => ({
         ...(isUuid(p.id) ? { id: p.id } : {}),
         group_id: p.group_id || selectedGroupId() || null,
@@ -2582,6 +2602,11 @@
       }),
       fromDb: p => ({
         ...p,
+        like_count: Number(p.like_count || 0),
+        dislike_count: Number(p.dislike_count || 0),
+        hidden_by_dislikes: !!p.hidden_by_dislikes,
+        hidden_at: p.hidden_at || null,
+        my_reaction: appData.photoReactions[p.id] || null,
         date: p.created_at || null
       })
     },
@@ -2603,6 +2628,7 @@
     members: [],
     meets: [],
     photos: [],
+    photoReactions: {},
     announcements: [],
     checkins: [],
     cruiseJoins: [],
@@ -2745,7 +2771,8 @@
 
   function scopedPhotos() {
     const gid = selectedGroupId();
-    return gid ? (appData.photos || []).filter(p => p.group_id === gid) : (appData.photos || []);
+    const visiblePhotos = (appData.photos || []).filter(p => !p.hidden_by_dislikes);
+    return gid ? visiblePhotos.filter(p => p.group_id === gid) : visiblePhotos;
   }
 
   function scopedCheckins() {
@@ -3206,6 +3233,8 @@
     appData.rsvps = [];
     appData.checkins = [];
     appData.cruiseJoins = [];
+    appData.photoReactions = {};
+    appData.photos = appData.photos.map(photo => ({ ...photo, my_reaction: null }));
     appData.groupMemberships = [];
     appData.notifications = [];
     teardownNotificationsRealtime();
@@ -4793,8 +4822,34 @@
     }
 
     appData[kind] = (data || []).map(row => normalize(kind, row));
+    if (kind === 'photos') await loadPhotoReactions(showError);
     if (kind === 'meets') await loadMeetRsvps(showError);
     return appData[kind];
+  }
+
+  async function loadPhotoReactions(showError = true) {
+    appData.photoReactions = {};
+    const uid = currentUserId() || currentSessionUserId();
+    const photoIds = (appData.photos || []).map(photo => photo.id).filter(Boolean);
+    if (!isSupabaseReady() || !uid || !photoIds.length) return appData.photoReactions;
+
+    const { data, error } = await supabaseClient
+      .from('photo_reactions')
+      .select('photo_id,reaction')
+      .eq('user_id', uid)
+      .in('photo_id', photoIds);
+
+    if (error) {
+      console.error('Could not load photo reactions', error);
+      if (showError) toast(`Could not load your photo reactions: ${error.message}`);
+      return appData.photoReactions;
+    }
+
+    (data || []).forEach(row => {
+      if (row && row.photo_id && ['like', 'dislike'].includes(row.reaction)) appData.photoReactions[row.photo_id] = row.reaction;
+    });
+    appData.photos = (appData.photos || []).map(photo => ({ ...photo, my_reaction: appData.photoReactions[photo.id] || null }));
+    return appData.photoReactions;
   }
 
   async function loadMeetRsvps(showError = true) {
@@ -6790,6 +6845,19 @@
     return !!uid && !!photo && photo.user_id === uid;
   }
 
+  function photoReactionButton(photo, reaction) {
+    const current = photo && photo.my_reaction;
+    const count = reaction === 'like' ? Number(photo && photo.like_count || 0) : Number(photo && photo.dislike_count || 0);
+    const active = current === reaction;
+    const icon = reaction === 'like' ? '👍' : '👎';
+    const label = reaction === 'like' ? 'Like' : 'Dislike';
+    return `<button class="photo-react-btn ${reaction}${active ? ' active' : ''}" type="button" onclick="handlePhotoReaction('${esc(photo.id)}', '${reaction}')" aria-pressed="${active ? 'true' : 'false'}" aria-label="${esc(label)} photo"><span aria-hidden="true">${icon}</span><span>${count}</span></button>`;
+  }
+
+  function photoReactionControls(photo) {
+    return `<div class="photo-reactions">${photoReactionButton(photo, 'like')}${photoReactionButton(photo, 'dislike')}</div>`;
+  }
+
   function populatePhotoMeetSelect() {
     const select = document.getElementById('ph-meet');
     if (!select) return;
@@ -6831,10 +6899,63 @@
               </div>
               ${userCanDeletePhoto(p) ? `<button class="photo-del" onclick="deletePhoto('${p.id}')" title="Delete photo" aria-label="Delete photo">Delete</button>` : ''}
             </div>
+            ${photoReactionControls(p)}
           </div>
         </div>`;
     }).join('');
   }
+
+  async function handlePhotoReaction(photoId, reaction) {
+    if (!['like', 'dislike'].includes(reaction)) return;
+    const uid = currentUserId() || currentSessionUserId();
+    if (!uid) {
+      promptSignIn('Sign in to like or dislike photos.');
+      return;
+    }
+    if (!isSupabaseReady()) {
+      toast('Photo reactions need a Supabase connection.');
+      return;
+    }
+
+    const photo = (appData.photos || []).find(p => p.id === photoId);
+    if (!photo || photo.hidden_by_dislikes) {
+      toast('That photo is no longer available in the feed.');
+      return;
+    }
+
+    const currentReaction = photo.my_reaction || appData.photoReactions[photoId] || null;
+    const buttons = Array.from(document.querySelectorAll(`.photo-react-btn[onclick*="${photoId}"]`));
+    buttons.forEach(btn => { btn.disabled = true; });
+
+    try {
+      // A user gets one row per photo. Deleting toggles the same reaction off;
+      // upsert switches between like and dislike while the database trigger
+      // recalculates counts and hides heavily disliked photos.
+      if (currentReaction === reaction) {
+        const { error } = await supabaseClient
+          .from('photo_reactions')
+          .delete()
+          .eq('photo_id', photoId)
+          .eq('user_id', uid);
+        if (error) throw error;
+        toast(reaction === 'like' ? 'Like removed' : 'Dislike removed');
+      } else {
+        const { error } = await supabaseClient
+          .from('photo_reactions')
+          .upsert({ photo_id: photoId, user_id: uid, reaction }, { onConflict: 'photo_id,user_id' });
+        if (error) throw error;
+        toast(reaction === 'like' ? 'Photo liked' : 'Photo disliked');
+      }
+      await loadKind('photos', false);
+      renderPhotos();
+      renderHome();
+    } catch (err) {
+      console.error('Could not update photo reaction', err);
+      toast(`Could not update reaction: ${err.message || 'Please try again.'}`);
+      renderPhotos();
+    }
+  }
+  window.handlePhotoReaction = handlePhotoReaction;
 
   function photoFallback() {
     const fallback = document.createElement('div');
