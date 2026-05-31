@@ -3612,7 +3612,6 @@
         await loadAllData(false, false);
         await refreshMemberCounts(false, { render: false, force: true });
         await fetchNotifications(false);
-        await createDueMeetReminderNotifications(false);
         setupNotificationsRealtime();
         if (refreshVersion !== authTransitionVersion) return;
         updateAuthUI();
@@ -4666,7 +4665,10 @@
     }
 
     const rows = [...(appData.notifications || [])]
-      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      .sort((a, b) => {
+        const unreadDelta = Number(!b.read_at) - Number(!a.read_at);
+        return unreadDelta || (new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      })
       .slice(0, 30);
     if (!rows.length) {
       list.innerHTML = '<div class="notification-empty">No notifications yet.</div>';
@@ -4695,13 +4697,14 @@
       const { data, error } = await supabaseClient
         .from('notifications')
         .select('*')
+        .eq('user_id', currentUserId())
+        .order('read_at', { ascending: true, nullsFirst: true })
         .order('created_at', { ascending: false })
         .limit(30);
       if (error) throw error;
       appData.notifications = data || [];
       setNotificationError('');
       renderNotifications();
-      console.log('[notifications] fetched', appData.notifications.length);
       return appData.notifications;
     } catch (err) {
       console.error('[notifications] fetch failed', err);
@@ -4742,12 +4745,8 @@
   }
 
   async function createCruiseStartedNotifications(checkin) {
-    if (!isSupabaseReady() || !checkin || !checkin.id || !checkin.group_id) {
-      console.log('[notifications] cruise start skipped; no selected crew/group');
-      return;
-    }
+    if (!isSupabaseReady() || !checkin || !checkin.id || !checkin.group_id) return;
     try {
-      console.log('[notifications] creating cruise-start notifications', { checkInId: checkin.id, groupId: checkin.group_id });
       const { error } = await supabaseClient.rpc('create_cruise_started_notifications', { target_check_in_id: checkin.id });
       if (error) throw error;
     } catch (err) {
@@ -4814,6 +4813,7 @@
       const { error } = await supabaseClient
         .from('notifications')
         .update({ read_at: readAt })
+        .eq('user_id', currentUserId())
         .is('read_at', null);
       if (error) throw error;
       appData.notifications = (appData.notifications || []).map(n => ({ ...n, read_at: n.read_at || readAt }));
@@ -4865,6 +4865,12 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') closeNotificationsPanel();
     });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && currentUserId()) fetchNotifications(false);
+    });
+    window.addEventListener('focus', () => {
+      if (currentUserId()) fetchNotifications(false);
+    });
   }
 
   function teardownNotificationsRealtime() {
@@ -4882,7 +4888,6 @@
       notificationChannel = supabaseClient
         .channel(`notifications:${uid}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, payload => {
-          console.log('[notifications] realtime payload', payload.eventType);
           const row = payload.new || payload.old;
           if (!row) return;
           if (payload.eventType === 'DELETE') {
@@ -4893,7 +4898,6 @@
           renderNotifications();
         })
         .subscribe(status => {
-          console.log('[notifications] realtime status', status);
           if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
             setNotificationError('Live notifications are unavailable. Pulling the latest notifications instead.');
             fetchNotifications(false);
@@ -5160,7 +5164,6 @@
       fetchNotifications(false)
     ]);
 
-    await createDueMeetReminderNotifications(false);
     await refreshMemberCounts(false, { render: false, force: true });
     setupMemberCountsRealtime();
 
@@ -6166,7 +6169,6 @@
         }
         await loadKind('meets', false);
         await loadCheckins(false);
-        await createDueMeetReminderNotifications(false);
       } else {
         await updateRecord('meets', meetId, m);
       }
@@ -6218,7 +6220,12 @@
       placeId: meet.place_id || meet.placeId || null
     });
     try {
-      await upsertCheckin(payload, 'meet check-in');
+      const savedCheckin = await upsertCheckin(payload, 'meet check-in');
+      if (savedCheckin && savedCheckin.id && savedCheckin.meet_id) {
+        supabaseClient.rpc('create_meet_checkin_notifications', { target_check_in_id: savedCheckin.id }).then(({ error }) => {
+          if (error) console.warn('Meet check-in notification fallback failed', error);
+        });
+      }
       await refreshCheckins(false);
       renderMeets();
       renderHome();
