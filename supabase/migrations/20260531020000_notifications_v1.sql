@@ -231,11 +231,11 @@ declare
   photo_row public.photo_drops%rowtype;
   actor_name text;
 begin
-  if tg_op = 'UPDATE' and old.reaction = 'like' then
+  if tg_op = 'UPDATE' and old.reaction = 'like' and new.reaction = 'like' then
     return new;
   end if;
 
-  if new.reaction <> 'like' then
+  if new.reaction is distinct from 'like' then
     return new;
   end if;
 
@@ -290,8 +290,11 @@ declare
   is_active boolean;
   meet_changed boolean;
 begin
-  was_active := tg_op = 'UPDATE' and old.ended_at is null and coalesce(old.expires_at, now()) > now();
-  is_active := new.ended_at is null and coalesce(new.expires_at, now()) > now();
+  was_active := tg_op = 'UPDATE'
+    and old.ended_at is null
+    and (old.expires_at is null or old.expires_at > now());
+  is_active := new.ended_at is null
+    and (new.expires_at is null or new.expires_at > now());
   meet_changed := tg_op = 'INSERT' or old.meet_id is distinct from new.meet_id;
 
   if not is_active then
