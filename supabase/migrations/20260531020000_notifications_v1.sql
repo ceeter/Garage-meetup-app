@@ -249,10 +249,6 @@ if new.reaction is distinct from 'like' then
   return new;
 end if;
 
-  if new.reaction <> 'like' then
-    return new;
-  end if;
-
   select * into photo_row
   from public.photo_drops
   where id = new.photo_id;
